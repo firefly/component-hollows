@@ -92,6 +92,7 @@ typedef enum FfxEvent{
 
 typedef struct FfxEventRenderSceneProps {
     uint32_t ticks;
+    uint32_t dt;
 } FfxEventRenderSceneProps;
 
 typedef struct FfxEventKeysProps {
@@ -240,6 +241,13 @@ bool ffx_deviceTestPrivkey(FfxEcPrivkey *privkey, uint32_t account);
 void ffx_log(const char* message);
 void ffx_logData(const char* tag, uint8_t *data, size_t length);
 
+#define FFX_LOG(format, ...) \
+  do { \
+      TaskStatus_t xTaskDetails; \
+      vTaskGetInfo(NULL, &xTaskDetails, pdFALSE, eInvalid); \
+      printf("[%s.%s:%d] " format "\n", xTaskDetails.pcTaskName, \
+        __FUNCTION__, __LINE__ __VA_OPT__(,) __VA_ARGS__); \
+  } while (0)
 
 
 #ifdef __cplusplus

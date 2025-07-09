@@ -32,15 +32,6 @@ const char* taskName();
 size_t readBuffer(const char *data, uint8_t *buffer, size_t length);
 void dumpBuffer(const char *header, const uint8_t *buffer, size_t length);
 
-extern uint32_t _ffx_lt;
-
-#define FFX_LOG(format, ...) \
-  do { \
-      TaskStatus_t xTaskDetails; \
-      vTaskGetInfo(NULL, &xTaskDetails, pdFALSE, eInvalid); \
-      printf("[%s.%s:%d] " format "\n", xTaskDetails.pcTaskName, \
-        __FUNCTION__, __LINE__ __VA_OPT__(,) __VA_ARGS__); \
-  } while (0)
 
 #ifdef __cplusplus
 }
