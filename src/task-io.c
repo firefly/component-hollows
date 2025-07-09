@@ -376,7 +376,7 @@ void taskIoFunc(void* pvParameter) {
             uint32_t now = ticks();
 
             ffx_emitEvent(FfxEventRenderScene, (FfxEventProps){
-                .render = { .ticks = now }
+                .render = { .ticks = now, .dt = now - lastFrameTime }
             });
 
             static uint32_t frameCount = 0;
