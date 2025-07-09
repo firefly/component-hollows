@@ -197,8 +197,8 @@ bool ffx_disconnect();
 bool ffx_radioOff();
 
 //bool ffx_getMessage(int id, FfxCborCursor *params);
-bool ffx_sendReplay(int id, const FfxCborBuilder *result);
-bool ffx_sendError(int id, uint32_t code, const char* mesage);
+bool ffx_sendReply(int id, const FfxCborBuilder *result);
+bool ffx_sendErrorReply(int id, uint32_t code, const char* mesage);
 
 
 ///////////////////////////////

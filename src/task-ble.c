@@ -450,8 +450,11 @@ static void processMessage() {
             }
         });
 
-        // No panels are currently processing messages
-        if (!accept) {
+        if (accept) {
+            msg.state = MessageStateProcessing;
+
+        } else {
+            // No panels are currently processing messages
             FfxCborBuilder builder = prepareReply();
 
             // Append the Error payload (error: { code, message })
@@ -467,6 +470,7 @@ static void processMessage() {
 
             sendMessage(&builder);
         }
+
 
     } else {
         resetMessage();
@@ -979,7 +983,7 @@ void panel_enableMessage(bool enable) {
 
 bool panel_isMessageEnabled() { return conn.enabled; }
 
-
+/*
 bool panel_acceptMessage(uint32_t id, FfxCborCursor *params) {
     xSemaphoreTake(msg.lock, portMAX_DELAY);
 
@@ -998,15 +1002,16 @@ bool panel_acceptMessage(uint32_t id, FfxCborCursor *params) {
 
     return true;
 }
+*/
 
-bool panel_sendErrorReply(uint32_t id, uint32_t code, char *message) {
+bool ffx_sendErrorReply(int id, uint32_t code, const char *message) {
     size_t length = strlen(message);
     if (id == 0 || length > 128) { return false; }
 
     xSemaphoreTake(msg.lock, portMAX_DELAY);
 
     if (id != msg.id || msg.state != MessageStateProcessing) {
-        FFX_LOG("Wrong error reply: id=%ld msg.id=%ld replyId=%ld\n", id,
+        FFX_LOG("Wrong error reply: id=%d msg.id=%ld replyId=%ld\n", id,
           msg.id, msg.replyId);
         xSemaphoreGive(msg.lock);
         return false;
@@ -1032,14 +1037,14 @@ bool panel_sendErrorReply(uint32_t id, uint32_t code, char *message) {
     return true;
 }
 
-bool panel_sendReply(uint32_t id, FfxCborBuilder *result) {
+bool ffx_sendReply(int id, const FfxCborBuilder *result) {
     if (id == 0) { return false; }
 
     xSemaphoreTake(msg.lock, portMAX_DELAY);
 
     if (id == 0 || id != msg.id || msg.state != MessageStateProcessing ||
       ffx_cbor_getBuildLength(result) > MAX_MESSAGE_SIZE) {
-        FFX_LOG("Wrong reply: id=%ld msg.id=%ld replyId=%ld\n", id, msg.id,
+        FFX_LOG("Wrong reply: id=%d msg.id=%ld replyId=%ld\n", id, msg.id,
           msg.replyId);
 
         xSemaphoreGive(msg.lock);
@@ -1059,8 +1064,8 @@ bool panel_sendReply(uint32_t id, FfxCborBuilder *result) {
     return true;
 }
 
-void panel_disconnect() {
-    if (!(conn.state & ConnStateConnected)) { return; }
+bool ffx_disconnect() {
+    if (!(conn.state & ConnStateConnected)) { return false; }
 
     int rc = ble_gap_terminate(conn.conn_handle, BLE_ERR_REM_USER_CONN_TERM);
     if (rc != 0) {
@@ -1068,6 +1073,8 @@ void panel_disconnect() {
     } else {
         FFX_LOG("Disconnect initiated\n");
     }
+
+    return true;
 }
 
 ///////////////////////////////
