@@ -1,8 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
 
-#set(EXTRA_COMPONENT_DIRS 
-#/Users/ricmoo/Development/firefly/pixie-firmware/components)
-
 idf_component_register(
   SRCS
     "src/device-info.c"
