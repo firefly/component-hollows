@@ -32,9 +32,9 @@ __attribute__((used)) const char code_signature[] =
 
 
 // This is added from the CMakeLists.txt
-#ifndef GIT_COMMIT
-#define GIT_COMMIT ("unknown")
-#endif
+//#ifndef GIT_COMMIT
+//#define GIT_COMMIT ("unknown")
+//#endif
 
 
 //static TaskHandle_t taskAppHandle = NULL;

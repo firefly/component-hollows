@@ -15,9 +15,6 @@
 #include "pixels.h"
 #include "utils.h"
 
-//#include "images/image-background.h"
-//#include "images/image-pixie.h"
-
 
 ///////////////////////////////
 // Keypad
@@ -132,7 +129,7 @@ void panel_setPixel(uint32_t pixel, color_ffxt color) {
 
 FfxScene scene;
 
-//FfxNode *background = NULL;
+FfxNode canvas = NULL;
 
 static uint8_t* allocSpace(size_t size, void *arg) {
     void* result = malloc(size);
@@ -313,6 +310,9 @@ void taskIoFunc(void* pvParameter) {
             FfxNode background = ffx_scene_createFill(scene, COLOR_BLACK);
             ffx_sceneGroup_appendChild(root, background);
         }
+
+        canvas = ffx_scene_createGroup(scene);
+        ffx_sceneGroup_appendChild(root, canvas);
 
         fpsLabel = ffx_scene_createLabel(scene, FfxFontSmall, "0");
         ffx_sceneGroup_appendChild(root, fpsLabel);

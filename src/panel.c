@@ -4,8 +4,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#include "firefly-hollows.h"
-
+#include "hollows.h"
 #include "utils.h"
 
 
@@ -17,6 +16,9 @@ extern FfxScene scene;
 
 #define PRIORITY_APP      (3)
 
+typedef enum PanelFlags {
+    PanelFlagsHasRender    = (1 << 0)
+} PanelFlags;
 
 /**
  *  The struct storing a Panels state. This is stored on the stack of
@@ -31,6 +33,8 @@ typedef struct PanelContext {
 
     FfxEventFunc events[_FfxEventCount];
     void* eventsArg[_FfxEventCount];
+
+    uint32_t flags;
 
     int id;
     struct PanelContext *parent;
@@ -60,6 +64,15 @@ bool ffx_emitEvent(FfxEvent event, FfxEventProps props) {
     if (active == NULL || event >= _FfxEventCount) { return false; }
 
     if (active->events[event] == NULL) { return false; }
+
+    if (event == FfxEventRenderScene) {
+        if (active->flags & PanelFlagsHasRender) {
+            FFX_LOG("already has render");
+            return true;
+        } else {
+            active->flags |= PanelFlagsHasRender;
+        }
+    }
 
     EventDispatch dispatch = {
         .callback = active->events[event],
@@ -201,7 +214,7 @@ static void initFunc(void *_arg) {
     // Initialize the Panel with the callback
     panelInit->init(scene, panel.node, panel.state, panelInit->arg);
 
-    ffx_sceneGroup_appendChild(ffx_scene_root(scene), node);
+    ffx_sceneGroup_appendChild(canvas, node);
 
     if (oldPanel && (pOldEnd.x != 0 || pOldEnd.y != 0)) {
         if (style == FfxPanelStyleInstant) {
@@ -229,6 +242,10 @@ static void initFunc(void *_arg) {
     while (1) {
         BaseType_t result = xQueueReceive(events, &dispatch, 1000);
         if (result != pdPASS) { continue; }
+
+        if (dispatch.event == FfxEventRenderScene) {
+            active->flags &= ~PanelFlagsHasRender;
+        }
 
         dispatch.callback(dispatch.event, dispatch.props, dispatch.arg);
     }

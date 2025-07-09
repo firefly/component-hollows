@@ -24,6 +24,8 @@ typedef struct TaskIoInit {
     void *arg;
 } TaskIoInit;
 
+extern FfxNode canvas;
+
 void taskIoFunc(void* pvParameter);
 
 
