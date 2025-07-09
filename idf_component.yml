@@ -1,0 +1,27 @@
+## IDF Component Manager Manifest File
+
+description: "The Panel manager for the Firefly Hardware Wallet."
+license: "MIT"
+version: "0.0.1"
+
+dependencies:
+  idf:
+    version: ">=4.1.0"
+
+maintainers:
+  - "Richard Moore <me@ricmoo.com>"
+
+tags:
+  - "firefly"
+  - "ethereum"
+
+discussion: https://github.com/firefly/component-hollows/discussions
+issues: "https://github.com/firefly/component-hollows/issues"
+repository: git@github.com:firefly/component-hollows.git
+url: https://docs.firefly.app/v0/components/hollows/
+
+files:
+  exclude:
+    - ".iterm2-project"
+    - ".gitignore"
+    - "obsolete"
