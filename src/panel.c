@@ -14,7 +14,6 @@ extern FfxScene scene;
 
 #define MAX_EVENT_BACKLOG  (16)
 
-#define PRIORITY_APP      (3)
 
 typedef enum PanelFlags {
     PanelFlagsHasRender    = (1 << 0)
@@ -160,7 +159,7 @@ static void initFunc(void *_arg) {
     PanelInit *panelInit = _arg;
 
     FfxPanelStyle style = panelInit->style;
-    if (active == NULL) { style = FfxPanelStyleInstant; }
+    //if (active == NULL) { style = FfxPanelStyleInstant; }
 
     // Create the panel state
     size_t stateSize = panelInit->stateSize ? panelInit->stateSize: 1;
@@ -237,10 +236,20 @@ static void initFunc(void *_arg) {
         _panelFirstFocus(NULL, FfxSceneActionStopFinal, NULL);
     }
 
+    FFX_LOG("panel: begin event dispatch");
+
+    uint32_t lastStatsTime = 0;
+
     // Begin the event loop
     EventDispatch dispatch = { 0 };
     while (1) {
         BaseType_t result = xQueueReceive(events, &dispatch, 1000);
+
+        if ((ticks() - lastStatsTime) > 60000) {
+            lastStatsTime = ticks();
+            FFX_LOG("high-water: %u", uxTaskGetStackHighWaterMark(NULL));
+        }
+
         if (result != pdPASS) { continue; }
 
         if (dispatch.event == FfxEventRenderScene) {
@@ -277,13 +286,9 @@ int ffx_pushPanel(FfxPanelInitFunc init, size_t stateSize,
         .done = xSemaphoreCreateBinaryStatic(&doneBuffer)
     };
 
-    printf("DEBUG: freeHeap=%ld request=%d\n", esp_get_free_heap_size(),
-      stateSize);
-
     BaseType_t status = xTaskCreatePinnedToCore(&initFunc, name,
-      ((4 * 4096) + stateSize + 3) / 4, &panelInit, PRIORITY_APP,
+      (12 * 256) + ((stateSize + 3) / 4), &panelInit, uxTaskPriorityGet(NULL),
       &handle, 0);
-    printf("[main] init panel task: status=%d\n", status);
     assert(handle != NULL);
 
     xSemaphoreTake(panelInit.done, portMAX_DELAY);
@@ -296,17 +301,19 @@ void ffx_popPanel(int result) {
 
     active = panel->parent;
 
+    FfxNode activeNode = active ? active->node: ffx_scene_createGroup(scene);
+
     // Store the result of the panel on the Panel owner's stack
     *(panel->result) = result;
 
     if (panel->style == FfxPanelStyleInstant) {
-        ffx_sceneNode_setPosition(active->node, (FfxPoint){
+        ffx_sceneNode_setPosition(activeNode, (FfxPoint){
             .x = 0, .y = 0
         });
         _panelBlur(scene, FfxSceneActionStopFinal, panel->node);
 
     } else {
-        FfxPoint pNewStart = ffx_sceneNode_getPosition(active->node);
+        FfxPoint pNewStart = ffx_sceneNode_getPosition(activeNode);
         FfxPoint pOldEnd = { 0 };
         switch (panel->style) {
             case FfxPanelStyleInstant:
@@ -331,7 +338,7 @@ void ffx_popPanel(int result) {
         }
 
         if (pNewStart.x != 0 || pNewStart.y != 0) {
-            ffx_sceneNode_animatePosition(active->node, ffx_point(0, 0),
+            ffx_sceneNode_animatePosition(activeNode, ffx_point(0, 0),
               0, 300, FfxCurveEaseInQuad, NULL, NULL);
         }
     }

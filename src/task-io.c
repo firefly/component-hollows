@@ -165,6 +165,11 @@ static void renderScene(uint8_t *fragment, uint32_t y0, void *context) {
         return;
     }
 
+    //if (y0 != 24) {
+    //    memset(fragment, 0, FfxDisplayFragmentWidth * FfxDisplayFragmentHeight * 2);
+    //    return;
+    //}
+
     //FfxScene scene = context;
     ffx_scene_render(scene, (uint16_t*)fragment,
       (FfxPoint){ .x = 0, .y = y0 },
@@ -197,11 +202,7 @@ void taskIoFunc(void* pvParameter) {
 
 
     KeypadContext keypad = { 0 };
-    {
-        uint32_t t0 = ticks();
-        keypad_init(&keypad);
-        FFX_LOG("init keypad: dt=%ldms", ticks() - t0);
-    }
+    keypad_init(&keypad);
 
     color_ffxt colorRamp1[] = {
         ffx_color_hsva(275, 0x3f, 0x00, 0x0c),
@@ -281,22 +282,12 @@ void taskIoFunc(void* pvParameter) {
         ffx_color_rgba(0, 0, 0, 0),
     };
 
-    //color_ffxt colorRampGreen[] = {
-    //    ffx_color_hsv(120, 0x3f, 0x0f, 0x0c),
-    //    ffx_color_hsv(120, 0x3f, 0x00, 0x0c),
-    //    ffx_color_hsv(120, 0x3f, 0x0f, 0x0c),
-    //};
+    pixels = pixels_init(PIXEL_COUNT, PIN_PIXELS);
+    pixels_animatePixel(pixels, 0, animateColorRamp, 780, 0, colorRamp1);
+    pixels_animatePixel(pixels, 1, animateColorRamp, 780, 0, colorRamp2);
+    pixels_animatePixel(pixels, 2, animateColorRamp, 780, 0, colorRamp3);
+    pixels_animatePixel(pixels, 3, animateColorRamp, 780, 0, colorRamp4);
 
-    {
-        uint32_t t0 = ticks();
-        pixels = pixels_init(PIXEL_COUNT, PIN_PIXELS);
-        FFX_LOG("init pixels: dt=%ldms", ticks() - t0);
-
-        pixels_animatePixel(pixels, 0, animateColorRamp, 780, 0, colorRamp1);
-        pixels_animatePixel(pixels, 1, animateColorRamp, 780, 0, colorRamp2);
-        pixels_animatePixel(pixels, 2, animateColorRamp, 780, 0, colorRamp3);
-        pixels_animatePixel(pixels, 3, animateColorRamp, 780, 0, colorRamp4);
-    }
 
     FfxNode fpsLabel = NULL;
     {
@@ -325,7 +316,7 @@ void taskIoFunc(void* pvParameter) {
         //ffx_scene_dump(scene);
     }
 
-    // The IO is up; unblock the bootstrap process and start the app
+    // The IO is ready; unblock the bootstrap process
     xSemaphoreGive(init->ready);
 
     // How long the reset sequence has been held down for
@@ -379,19 +370,21 @@ void taskIoFunc(void* pvParameter) {
                 .render = { .ticks = now, .dt = now - lastFrameTime }
             });
 
-            static uint32_t frameCount = 0;
-            static uint32_t lastFpsUpdate = 0;
+            {
+                static uint32_t frameCount = 0;
+                static uint32_t lastFpsUpdate = 0;
 
-            frameCount++;
-            uint32_t dt = now - lastFpsUpdate;
-            if (dt > 1000) {
-                uint32_t fps10 = 10000 * frameCount / dt;
-                ffx_sceneLabel_setTextFormat(fpsLabel, "%d.%d", fps10 / 10,
-                  fps10 % 10);
-                frameCount = 0;
-                lastFpsUpdate = now;
+                frameCount++;
+                uint32_t dt = now - lastFpsUpdate;
+                if (dt > 1000) {
+                    uint32_t fps10 = 10000 * frameCount / dt;
+                    ffx_sceneLabel_setTextFormat(fpsLabel, "%d.%d", fps10 / 10,
+                      fps10 % 10);
+                    frameCount = 0;
+                    lastFpsUpdate = now;
 
-                //ffx_scene_dumpStats(scene);
+                    //ffx_scene_dumpStats(scene);
+                }
             }
 
             // We stagger 16ms and 17ms delays to acheive a target framerate
@@ -401,6 +394,7 @@ void taskIoFunc(void* pvParameter) {
             // amount to add to 16 to acheive the target.
             //
             // See: docs/research/compute-ratio.mjs
+            /*
             static uint32_t frameStagger = 0;
             frameStagger >>= 1;
             if (frameStagger == 0) {
@@ -409,14 +403,17 @@ void taskIoFunc(void* pvParameter) {
 
             BaseType_t didDelay = xTaskDelayUntil(&lastFrameTime,
               16 + (frameStagger & 0x1));
+            */
+
+            // Target: 50 FPS
+            BaseType_t didDelay = xTaskDelayUntil(&lastFrameTime, 20);
 
             // We are falling behind, catch up by dropping frames
             if (didDelay == pdFALSE) {
-                //printf("Frame dropped dt=%ld\n", now - lastFrameTime);
+                //printf("Frame dropped dt=%ld\n", ticks() - lastFrameTime);
+                delay(1);
                 lastFrameTime = ticks();
             }
         }
-
-        fflush(stdout);
     }
 }

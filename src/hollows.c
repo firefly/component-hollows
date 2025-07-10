@@ -20,50 +20,32 @@ __attribute__((used)) const char code_signature[] =
 
 
 
-// See: device-info.c
-//FfxDeviceStatus ffx_deviceInit();
-
-// See: task-ble.c
-//void taskBleFunc(void* pvParameter);
-
-// See: task-io.c
-//extern FfxNode background;
-//void taskIoFunc(void* pvParameter);
-
-
-// This is added from the CMakeLists.txt
-//#ifndef GIT_COMMIT
-//#define GIT_COMMIT ("unknown")
-//#endif
-
-
-//static TaskHandle_t taskAppHandle = NULL;
+static TaskHandle_t taskAppHandle = NULL;
 static TaskHandle_t taskBleHandle = NULL;
 static TaskHandle_t taskIoHandle = NULL;
 
-/*
+typedef struct TaskAppInit {
+    SemaphoreHandle_t ready;
+
+    FfxInitFunc initFunc;
+    void *arg;
+} TaskAppInit;
+
 void taskAppFunc(void* pvParameter) {
-    uint32_t *ready = (uint32_t*)pvParameter;
     vTaskSetApplicationTaskTag(NULL, (void*) NULL);
 
-    *ready = 1;
+    TaskAppInit *init = pvParameter;
+    FfxInitFunc initFunc = init->initFunc;
+    void *arg = init->arg;
 
-    // Start the App Process; this is started in the main task, so
-    // has high-priority. Don't doddle.
-    // @TODO: should we start a short-lived low-priority task to start this?
-    //pushPanelSpace(NULL);
-    //pushPanelNull(pushPanelSpace);
-    //pushPanelKeyboard(NULL);
-    //pushPanelGame(NULL);
+    // We've copied the init params; unblock the bootstrap process
+    xSemaphoreGive(init->ready);
 
-    //uint32_t result = pushPanelTest(NULL);
-    //uint32_t result = pushPanelConnect();
-    int result = 1; //pushPanelMenu(NULL);
-    printf("[main] Root Panel returned status %d\n", result);
+    int result = initFunc(arg);
+    FFX_LOG("root panel returned: status=%d", result);
 
     while (1) { delay(10000); }
 }
-*/
 
 void taskPrimeFunc(void* pvParameter) {
     vTaskSetApplicationTaskTag(NULL, (void*) NULL);
@@ -73,7 +55,7 @@ void taskPrimeFunc(void* pvParameter) {
         ffx_deviceTestPrivkey(&privkey0, 0);
     }
 
-    FFX_LOG("PRIME task done");
+    FFX_LOG("PRIME task done; high-water: %u", uxTaskGetStackHighWaterMark(NULL));
 /*
     uint8_t challenge[32] = { 0 };
     challenge[31] = 42;
@@ -97,8 +79,8 @@ void taskPrimeFunc(void* pvParameter) {
 }
 
 
-void ffx_init(FfxBackgroundFunc backgroundFunc, void *arg) {
-    FFX_LOG("GIT Commit: %s", GIT_COMMIT);
+void ffx_init(FfxBackgroundFunc backgroundFunc, FfxInitFunc initFunc,
+  void *arg) {
 
     vTaskSetApplicationTaskTag(NULL, (void*)NULL);
 
@@ -132,7 +114,7 @@ void ffx_init(FfxBackgroundFunc backgroundFunc, void *arg) {
         };
 
         BaseType_t status = xTaskCreatePinnedToCore(&taskIoFunc, "io",
-          8 * 1024, &init, PRIORITY_IO, &taskIoHandle, 0);
+          12 * 256, &init, PRIORITY_IO, &taskIoHandle, 0);
         assert(status && taskIoHandle != NULL);
 
         // Wait for the IO task to complete setup
@@ -144,25 +126,32 @@ void ffx_init(FfxBackgroundFunc backgroundFunc, void *arg) {
     // Start the Message task (handles BLE messages) [priority: 5]
     {
         BaseType_t status = xTaskCreatePinnedToCore(&taskBleFunc, "ble",
-          4 * 1024, NULL, PRIORITY_BLE, &taskBleHandle, 0);
+          14 * 256, NULL, PRIORITY_BLE, &taskBleHandle, 0);
         assert(status && taskBleHandle != NULL);
     }
 
     // Start app process [priority: 3];
-    /*
     {
-        // Pointer passed to taskAppFunc to notify us when APP is ready
-        uint32_t ready = 0;
+        uint32_t t0 = ticks();
+
+        // Pointer passed to taskIoFunc to notify us when IO is ready
+        StaticSemaphore_t readyBuffer;
+
+        TaskAppInit init = {
+            .initFunc = initFunc,
+            .arg = arg,
+            .ready = xSemaphoreCreateBinaryStatic(&readyBuffer)
+        };
 
         BaseType_t status = xTaskCreatePinnedToCore(&taskAppFunc, "app",
-          4 * 1024, &ready, PRIORITY_APP, &taskAppHandle, 0);
+          10 * 256, &init, PRIORITY_APP, &taskAppHandle, 0);
         assert(status && taskAppHandle != NULL);
 
         // Wait for the IO task to complete setup
-        while (!ready) { delay(1); }
-        printf("[main] APP ready\n");
+        xSemaphoreTake(init.ready, portMAX_DELAY);
+
+        FFX_LOG("APP task ready (dt=%ld)", ticks() - t0);
     }
-    */
 
     // Start prime process [priority: 2];
     {
@@ -172,11 +161,21 @@ void ffx_init(FfxBackgroundFunc backgroundFunc, void *arg) {
         //uint32_t ready = 0;
 
         BaseType_t status = xTaskCreatePinnedToCore(&taskPrimeFunc, "prime",
-          8 * 1024, NULL, PRIORITY_PRIME, &taskPrimeHandle, 0);
+          32 * 256, NULL, PRIORITY_PRIME, &taskPrimeHandle, 0);
         assert(status && taskPrimeHandle != NULL);
 
         // Wait for the prime task to complete setup
         //while (!ready) { delay(1); }
         //FFX_LOG("PRIME task done");
     }
+}
+
+void ffx_dump() {
+    FFX_LOG("ticks=%ld; heap=%ld; high-water: main=%u io=%u, ble=%u app=%u, freq=%ld",
+      ticks(), esp_get_free_heap_size(),
+      uxTaskGetStackHighWaterMark(NULL),
+      uxTaskGetStackHighWaterMark(taskIoHandle),
+      uxTaskGetStackHighWaterMark(taskBleHandle),
+      uxTaskGetStackHighWaterMark(taskAppHandle),
+      portTICK_PERIOD_MS);
 }

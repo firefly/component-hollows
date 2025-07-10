@@ -14,15 +14,9 @@ extern "C" {
 #include "firefly-ecc.h"
 #include "firefly-scene.h"
 
-/*
-typedef struct FfxContext {
-    FfxNode background;
-    FfxNode hud;
-} FfxContext;
-*/
 
 typedef void (*FfxBackgroundFunc)(FfxNode background, void *arg);
-//void (*FfxHollowsInit)(FfxNode background, void *arg);
+typedef int (*FfxInitFunc)(void *arg);
 
 
 ///////////////////////////////
@@ -176,8 +170,10 @@ typedef struct FfxDeviceAttestation {
 ///////////////////////////////
 // Life-cycle
 
-void ffx_init(FfxBackgroundFunc backgroundFunc, void* arg);
+void ffx_init(FfxBackgroundFunc backgroundFunc, FfxInitFunc initFunc,
+  void* arg);
 
+void ffx_dump();
 
 ///////////////////////////////
 // Events
@@ -244,9 +240,10 @@ void ffx_logData(const char* tag, uint8_t *data, size_t length);
 #define FFX_LOG(format, ...) \
   do { \
       TaskStatus_t xTaskDetails; \
+      UBaseType_t pri = uxTaskPriorityGet(NULL); \
       vTaskGetInfo(NULL, &xTaskDetails, pdFALSE, eInvalid); \
-      printf("[%s.%s:%d] " format "\n", xTaskDetails.pcTaskName, \
-        __FUNCTION__, __LINE__ __VA_OPT__(,) __VA_ARGS__); \
+      printf("[%s.%d:%s:%d] " format "\n", xTaskDetails.pcTaskName, \
+        pri, __FUNCTION__, __LINE__ __VA_OPT__(,) __VA_ARGS__); \
   } while (0)
 
 
