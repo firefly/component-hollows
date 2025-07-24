@@ -5,6 +5,7 @@ idf_component_register(
     "src/device-info.c"
     "src/hollows.c"
     "src/panel.c"
+    "src/panel-info.c"
     "src/pixels.c"
     "src/task-ble.c"
     "src/task-io.c"

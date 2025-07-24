@@ -9,6 +9,15 @@ extern "C" {
 #include "firefly-hollows.h"
 
 
+typedef enum PanelStyle {
+    PanelStyleInstant = 0,
+
+    // For popping, this will reverse the animation used to show it
+    PanelStyleDefault,
+    PanelStyleSlideUp,
+    PanelStyleSlideLeft,
+} PanelStyle;
+
 ///////////////////////////////
 // device-info.c
 

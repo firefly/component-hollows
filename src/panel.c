@@ -39,7 +39,7 @@ typedef struct PanelContext {
     struct PanelContext *parent;
 
     FfxNode node;
-    FfxPanelStyle style;
+    PanelStyle style;
 
     uint8_t *state;
 } PanelContext;
@@ -134,7 +134,7 @@ typedef struct PanelInit {
     int id;
     size_t stateSize;
     void *arg;
-    FfxPanelStyle style;
+    PanelStyle style;
 
     SemaphoreHandle_t done;
     uint32_t result;
@@ -158,8 +158,7 @@ static void initFunc(void *_arg) {
 
     PanelInit *panelInit = _arg;
 
-    FfxPanelStyle style = panelInit->style;
-    //if (active == NULL) { style = FfxPanelStyleInstant; }
+    PanelStyle style = panelInit->style;
 
     // Create the panel state
     size_t stateSize = panelInit->stateSize ? panelInit->stateSize: 1;
@@ -177,13 +176,13 @@ static void initFunc(void *_arg) {
     FfxPoint pNewEnd = { 0 };
     FfxPoint pOldEnd = { 0 };
     switch (style) {
-        case FfxPanelStyleInstant:
+        case PanelStyleInstant:
             break;
-        case FfxPanelStyleCoverUp:
+        case PanelStyleSlideUp:
             pNewStart.y = 240;
             break;
-        case FfxPanelStyleDefault:
-        case FfxPanelStyleSlideLeft:
+        case PanelStyleDefault:
+        case PanelStyleSlideLeft:
             pOldEnd.x = -240;
             pNewStart.x = 240;
             break;
@@ -216,7 +215,7 @@ static void initFunc(void *_arg) {
     ffx_sceneGroup_appendChild(canvas, node);
 
     if (oldPanel && (pOldEnd.x != 0 || pOldEnd.y != 0)) {
-        if (style == FfxPanelStyleInstant) {
+        if (style == PanelStyleInstant) {
             ffx_sceneNode_setPosition(oldPanel->node, pOldEnd);
         } else {
             ffx_sceneNode_animatePosition(oldPanel->node, pOldEnd, 0, 300,
@@ -225,7 +224,7 @@ static void initFunc(void *_arg) {
     }
 
     if (pNewStart.x != pNewEnd.x || pNewStart.y != pNewEnd.y) {
-        if (style == FfxPanelStyleInstant) {
+        if (style == PanelStyleInstant) {
             ffx_sceneNode_setPosition(node, pNewEnd);
             _panelFirstFocus(NULL, FfxSceneActionStopFinal, NULL);
         } else {
@@ -264,8 +263,7 @@ static void initFunc(void *_arg) {
 ///////////////////////////////
 // Panel API
 
-int ffx_pushPanel(FfxPanelInitFunc init, size_t stateSize,
-  FfxPanelStyle style, void *arg) {
+int ffx_pushPanel(FfxPanelInitFunc init, size_t stateSize, void *arg) {
 
     static int nextPanelId = 1;
     int panelId = nextPanelId++;
@@ -277,6 +275,8 @@ int ffx_pushPanel(FfxPanelInitFunc init, size_t stateSize,
 
     TaskHandle_t handle = NULL;
 
+    PanelStyle style = active ? PanelStyleSlideLeft: PanelStyleSlideUp;
+
     PanelInit panelInit = {
         .id = panelId,
         .init = init,
@@ -287,7 +287,7 @@ int ffx_pushPanel(FfxPanelInitFunc init, size_t stateSize,
     };
 
     BaseType_t status = xTaskCreatePinnedToCore(&initFunc, name,
-      (12 * 256) + ((stateSize + 3) / 4), &panelInit, uxTaskPriorityGet(NULL),
+      (16 * 256) + ((stateSize + 3) / 4), &panelInit, uxTaskPriorityGet(NULL),
       &handle, 0);
     assert(handle != NULL);
 
@@ -306,7 +306,7 @@ void ffx_popPanel(int result) {
     // Store the result of the panel on the Panel owner's stack
     *(panel->result) = result;
 
-    if (panel->style == FfxPanelStyleInstant) {
+    if (panel->style == PanelStyleInstant) {
         ffx_sceneNode_setPosition(activeNode, (FfxPoint){
             .x = 0, .y = 0
         });
@@ -316,14 +316,14 @@ void ffx_popPanel(int result) {
         FfxPoint pNewStart = ffx_sceneNode_getPosition(activeNode);
         FfxPoint pOldEnd = { 0 };
         switch (panel->style) {
-            case FfxPanelStyleInstant:
+            case PanelStyleInstant:
                 assert(0);
                 break;
-            case FfxPanelStyleCoverUp:
+            case PanelStyleSlideUp:
                 pOldEnd.y = 240;
                 break;
-            case FfxPanelStyleDefault:
-            case FfxPanelStyleSlideLeft:
+            case PanelStyleDefault:
+            case PanelStyleSlideLeft:
                 pOldEnd.x = 240;
                 break;
         }

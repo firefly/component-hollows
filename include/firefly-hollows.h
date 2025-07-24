@@ -15,30 +15,23 @@ extern "C" {
 #include "firefly-scene.h"
 
 
+
+///////////////////////////////
+// Life-cycle
+
 typedef void (*FfxBackgroundFunc)(FfxNode background, void *arg);
+
 typedef int (*FfxInitFunc)(void *arg);
 
 
-///////////////////////////////
-// Panel Structs
-
-typedef enum FfxPanelStyle {
-    FfxPanelStyleInstant = 0,
-
-    // For popping, this will reverse the animation used to show it
-    FfxPanelStyleDefault,
-    FfxPanelStyleCoverUp,
-//    PanelStyleSlideOver,
-    FfxPanelStyleSlideLeft, // SlideFromRight?
-//    PanelStyleCoverFromRight,
-} FfxPanelStyle;
-
-typedef int (*FfxPanelInitFunc)(FfxScene scene, FfxNode node, void* state,
+void ffx_init(FfxBackgroundFunc backgroundFunc, FfxInitFunc initFunc,
   void* arg);
 
+void ffx_dumpStats();
+
 
 ///////////////////////////////
-// Event Structs
+// Events
 
 typedef uint16_t FfxKeys;
 
@@ -124,8 +117,92 @@ typedef union FfxEventProps {
 typedef void (*FfxEventFunc)(FfxEvent event, FfxEventProps props, void* arg);
 
 
+bool ffx_onEvent(FfxEvent event, FfxEventFunc eventFunc, void *arg);
+bool ffx_hasEvent(FfxEvent event);
+bool ffx_emitEvent(FfxEvent event, FfxEventProps props);
+bool ffx_offEvent(FfxEvent event);
+
+
 ///////////////////////////////
-// Device Info Structs
+// Radio + Messages
+
+bool ffx_radioOn();
+bool ffx_isRadioOn();
+bool ffx_isConnected();
+bool ffx_disconnect();
+bool ffx_radioOff();
+
+bool ffx_sendReply(int id, const FfxCborBuilder *result);
+bool ffx_sendErrorReply(int id, uint32_t code, const char* mesage);
+
+
+///////////////////////////////
+// Panel management
+
+typedef int (*FfxPanelInitFunc)(FfxScene scene, FfxNode node, void* state,
+  void* arg);
+
+int ffx_pushPanel(FfxPanelInitFunc initFunc, size_t stateSize, void *arg);
+
+void ffx_popPanel(int status);
+
+
+///////////////////////////////
+// Info Panel
+
+#define COLOR_CANCEL        (COLOR_RED)
+#define COLOR_APPROVE       (COLOR_GREEN)
+#define COLOR_BACK          (COLOR_BLUE)
+
+typedef union FfxInfoArg {
+    void *ptr;
+    const char *str;
+    const uint8_t *data;
+    int i32;
+    size_t size;
+} FfxInfoArg;
+
+typedef struct FfxInfoClickArg {
+    FfxInfoArg a, b, c, d;
+} FfxInfoClickArg;
+
+
+
+typedef int (*FfxInfoInitFunc)(void *info, void *state, void *initArg);
+
+typedef void (*FfxInfoClickFunc)(void *state, FfxInfoClickArg clickArg);
+
+// Move to pushInfo?
+//void ffx_appendInfoTitle(void *info, const char* title);
+
+void ffx_appendInfoEntry(void *info, const char* heading, const char* value,
+  FfxInfoClickFunc clickFunc, FfxInfoClickArg clickArg);
+
+//void ffx_appendInfoQR(void *info, const char* text,
+//  FfxInfoClickFunc clickFunc, FfxInfoClickArg clickArg);
+//void ffx_appendInfoQRData(void *info, const uint8_t* data, size_t length,
+//  FfxInfoClickFunc clickFunc, FfxInfoClickArg clickArg);
+
+void ffx_appendInfoButton(void *info, const char* label, color_ffxt color,
+  FfxInfoClickFunc clickFunc, FfxInfoClickArg clickArg);
+
+int ffx_pushInfo(FfxInfoInitFunc initFunc, const char* title,
+  size_t stateSize, void *initArg);
+
+
+///////////////////////////////
+// Pixels
+
+// @TODO: Pixel API
+// void ffx_setPixel(size_t pixel, color_ffxt color);
+// void ffx_lerpPixel(size_t pixel, color_ffxt *colors, size_t count,
+//  int duration, int repeat);
+// void ffx_snapPixel(size_t pixel, color_ffxt *colors, size_t count,
+//  int duration, int repeat);
+
+
+///////////////////////////////
+// Device Info
 
 typedef enum FfxDeviceStatus {
     FfxDeviceStatusOk              = 0,
@@ -167,60 +244,6 @@ typedef struct FfxDeviceAttestation {
 } FfxDeviceAttestation;
 
 
-///////////////////////////////
-// Life-cycle
-
-void ffx_init(FfxBackgroundFunc backgroundFunc, FfxInitFunc initFunc,
-  void* arg);
-
-void ffx_dump();
-
-///////////////////////////////
-// Events
-
-bool ffx_onEvent(FfxEvent event, FfxEventFunc eventFunc, void *arg);
-bool ffx_hasEvent(FfxEvent event);
-bool ffx_emitEvent(FfxEvent event, FfxEventProps props);
-bool ffx_offEvent(FfxEvent event);
-
-
-///////////////////////////////
-// Radio + Messages
-
-bool ffx_radioOn();
-bool ffx_isRadioOn();
-bool ffx_isConnected();
-bool ffx_disconnect();
-bool ffx_radioOff();
-
-//bool ffx_getMessage(int id, FfxCborCursor *params);
-bool ffx_sendReply(int id, const FfxCborBuilder *result);
-bool ffx_sendErrorReply(int id, uint32_t code, const char* mesage);
-
-
-///////////////////////////////
-// Panel management
-
-int ffx_pushPanel(FfxPanelInitFunc initFunc, size_t stateSize,
-  FfxPanelStyle style, void *arg);
-
-void ffx_popPanel(int status);
-
-
-///////////////////////////////
-// Pixels
-
-// @TODO: Pixel API
-// void ffx_setPixel(size_t pixel, color_ffxt color);
-// void ffx_lerpPixel(size_t pixel, color_ffxt *colors, size_t count,
-//  int duration, int repeat);
-// void ffx_snapPixel(size_t pixel, color_ffxt *colors, size_t count,
-//  int duration, int repeat);
-
-
-///////////////////////////////
-// Device Info
-
 int ffx_deviceSerialNumber();
 
 int ffx_deviceModelNumber();
@@ -245,6 +268,7 @@ void ffx_logData(const char* tag, uint8_t *data, size_t length);
       printf("[%s.%d:%s:%d] " format "\n", xTaskDetails.pcTaskName, \
         pri, __FUNCTION__, __LINE__ __VA_OPT__(,) __VA_ARGS__); \
   } while (0)
+
 
 
 #ifdef __cplusplus

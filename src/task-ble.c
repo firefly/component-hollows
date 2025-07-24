@@ -311,12 +311,12 @@ static uint32_t checkMessage(FfxCborCursor cursor) {
 
     // Check Method (and copy it)
     {
-        FfxCborCursor check = ffx_cbor_followKey(cursor, "method");
-        if (check.error || !ffx_cbor_checkType(check, FfxCborTypeString)) {
+        FfxCborCursor check = ffx_cbor_followKey(&cursor, "method");
+        if (check.error || !ffx_cbor_checkType(&check, FfxCborTypeString)) {
             return 0;
         }
 
-        FfxDataResult data = ffx_cbor_getData(check);
+        FfxDataResult data = ffx_cbor_getData(&check);
         if (data.error || data.length == 0) { return 0; }
 
         size_t safeLength = MIN(data.length, MAX_METHOD_LENGTH - 1);
@@ -328,9 +328,9 @@ static uint32_t checkMessage(FfxCborCursor cursor) {
 
     // Check params
     {
-        FfxCborCursor check = ffx_cbor_followKey(cursor, "params");
+        FfxCborCursor check = ffx_cbor_followKey(&cursor, "params");
         if (check.error ||
-          !ffx_cbor_checkType(check, FfxCborTypeArray | FfxCborTypeMap)) {
+          !ffx_cbor_checkType(&check, FfxCborTypeArray | FfxCborTypeMap)) {
             return 0;
         }
         msg.params = check;
@@ -338,12 +338,12 @@ static uint32_t checkMessage(FfxCborCursor cursor) {
 
     // Check ID
     {
-        FfxCborCursor check = ffx_cbor_followKey(cursor, "id");
-        if (check.error || !ffx_cbor_checkType(check, FfxCborTypeNumber)) {
+        FfxCborCursor check = ffx_cbor_followKey(&cursor, "id");
+        if (check.error || !ffx_cbor_checkType(&check, FfxCborTypeNumber)) {
             return 0;
         }
 
-        FfxValueResult replyId = ffx_cbor_getValue(check);
+        FfxValueResult replyId = ffx_cbor_getValue(&check);
         if (replyId.error || replyId.value == 0 || replyId.value > 0x7fffffff) {
             return 0;
         }
@@ -379,21 +379,17 @@ static FfxCborBuilder prepareReply() {
 }
 
 // Caller must own msg.lock
-static void sendMessage(FfxCborBuilder *builder) {
+static void sendMessage(const FfxCborBuilder *builder) {
     size_t cborLength = ffx_cbor_getBuildLength(builder);
 
     FFX_LOG(">>> (id=%ld => replyId=%ld) ", msg.id, msg.replyId);
     FfxCborCursor cursor = ffx_cbor_walk(builder->data, cborLength);
-    ffx_cbor_dump(cursor);
+    ffx_cbor_dump(&cursor);
 
     msg.length = cborLength + 32;
     msg.state = MessageStateSending;
     msg.id = 0;
 
-    //FfxSha256Context ctx;
-    //ffx_hash_initSha256(&ctx);
-    //ffx_hash_updateSha256(&ctx, &msg.data[32], cborLength);
-    //ffx_hash_finalSha256(&ctx, msg.data);
     ffx_hash_sha256(msg.data, &msg.data[32], cborLength);
 
     queueCommandRequest(CMD_RESET);
@@ -436,10 +432,12 @@ static void processMessage() {
 
     // Dump the CBOR data to the console
     FFX_LOG("<<< (id=%ld => replyId=%ld) ", msg.id, msg.replyId);
-    ffx_cbor_dump(msg.payload);
+    ffx_cbor_dump(&msg.payload);
 
     if (msg.replyId) {
         msg.state = MessageStateReceived;
+printf("FOO: %ld %s\n", msg.id, msg.method);
+ffx_cbor_dump(&msg.params);
 
         // The params gets cloned within the emitMessageEvents.
         bool accept = ffx_emitEvent(FfxEventMessage, (FfxEventProps){
@@ -470,7 +468,6 @@ static void processMessage() {
 
             sendMessage(&builder);
         }
-
 
     } else {
         resetMessage();

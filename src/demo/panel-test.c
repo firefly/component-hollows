@@ -55,5 +55,5 @@ static int init(FfxScene scene, FfxNode node, void *_app, void *arg) {
 }
 
 int ffx_demo_pushPanelTest(void *arg) {
-    return ffx_pushPanel(init, sizeof(State), FfxPanelStyleCoverUp, arg);
+    return ffx_pushPanel(init, sizeof(State), arg);
 }

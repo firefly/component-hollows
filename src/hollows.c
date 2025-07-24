@@ -114,7 +114,7 @@ void ffx_init(FfxBackgroundFunc backgroundFunc, FfxInitFunc initFunc,
         };
 
         BaseType_t status = xTaskCreatePinnedToCore(&taskIoFunc, "io",
-          12 * 256, &init, PRIORITY_IO, &taskIoHandle, 0);
+          14 * 256, &init, PRIORITY_IO, &taskIoHandle, 0);
         assert(status && taskIoHandle != NULL);
 
         // Wait for the IO task to complete setup
@@ -144,7 +144,7 @@ void ffx_init(FfxBackgroundFunc backgroundFunc, FfxInitFunc initFunc,
         };
 
         BaseType_t status = xTaskCreatePinnedToCore(&taskAppFunc, "app",
-          10 * 256, &init, PRIORITY_APP, &taskAppHandle, 0);
+          12 * 256, &init, PRIORITY_APP, &taskAppHandle, 0);
         assert(status && taskAppHandle != NULL);
 
         // Wait for the IO task to complete setup
@@ -170,7 +170,7 @@ void ffx_init(FfxBackgroundFunc backgroundFunc, FfxInitFunc initFunc,
     }
 }
 
-void ffx_dump() {
+void ffx_dumpStats() {
     FFX_LOG("ticks=%ld; heap=%ld; high-water: main=%u io=%u, ble=%u app=%u, freq=%ld",
       ticks(), esp_get_free_heap_size(),
       uxTaskGetStackHighWaterMark(NULL),

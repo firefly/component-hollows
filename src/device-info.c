@@ -7,9 +7,9 @@
 #include "esp_random.h"
 #include "nvs_flash.h"
 
-#include "firefly-address.h"
 #include "firefly-bip32.h"
 #include "firefly-ecc.h"
+#include "firefly-eth.h"
 #include "firefly-hash.h"
 #include "firefly-hollows.h"
 
