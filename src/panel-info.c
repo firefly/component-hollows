@@ -141,7 +141,9 @@ static bool selectHighlight(State *state) {
     if (node == NULL) { return false; }
 
     Button *button = ffx_sceneAnchor_getData(node);
-    button->clickFunc(&state[1], button->clickArg);
+    if (button->clickFunc) {
+        button->clickFunc(&state[1], button->clickArg);
+    }
 
     return true;
 }
