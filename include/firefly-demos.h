@@ -22,6 +22,10 @@ typedef struct FfxDemoBackgroundPixies {
     size_t pixieCount;
 } FfxDemoBackgroundPixies;
 
+/**
+ *  Create a background of a forest with fireflies wandering around,
+ *  connecting it the %%root%% node.
+ */
 void ffx_demo_backgroundPixies(FfxNode root, void *arg);
 
 

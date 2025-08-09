@@ -19,14 +19,39 @@ extern "C" {
 ///////////////////////////////
 // Life-cycle
 
+// [2 bits: reserved][10 bits: major][10 bits: minor][10 bits: patch]
+#define FFX_VERSION(a,b,c)      (((a) << 20) | ((b) << 10) | ((c) << 0))
+
+#define FFX_VERSION_MAJOR(v)    (((v) >> 20) & 0x3ff)
+#define FFX_VERSION_MINOR(v)    (((v) >> 10) & 0x3ff)
+#define FFX_VERSION_PATCH(v)    (((v) >> 0) & 0x3ff)
+
+
+/**
+ *  The function signature used by [[ffx_init]] to configure the
+ *  background the Hollows Springboard.
+ *
+ *  The %%background%% is positioned behind all other Panels.
+ */
 typedef void (*FfxBackgroundFunc)(FfxNode background, void *arg);
 
+/**
+ *  The function signature used by [[ffx_init]] to start the initial
+ *  Panel using [[ffx_pushPanel]].
+ *
+ *  The root Panel should not ever call [[ffx_popPanel]].
+ */
 typedef int (*FfxInitFunc)(void *arg);
 
+/**
+ *  Initializes the Hollows Springboard.
+ */
+void ffx_init(uint32_t version, FfxBackgroundFunc backgroundFunc,
+  FfxInitFunc initFunc, void* arg);
 
-void ffx_init(FfxBackgroundFunc backgroundFunc, FfxInitFunc initFunc,
-  void* arg);
-
+/**
+ *  Dump the Hollows Springboard statistics to the console.
+ */
 void ffx_dumpStats();
 
 
@@ -116,10 +141,28 @@ typedef union FfxEventProps {
 
 typedef void (*FfxEventFunc)(FfxEvent event, FfxEventProps props, void* arg);
 
-
+/**
+ *  Sets the handler for %%event%% on the Active Panel. On each
+ *  [[ffx_emitEvent]] the %%eventFunc%% will be called with the event
+ *  properties and %%arg%%.
+ */
 bool ffx_onEvent(FfxEvent event, FfxEventFunc eventFunc, void *arg);
+
+/**
+ *  Returns true if the Active Panel has a handler installed for %%event%%.
+ */
 bool ffx_hasEvent(FfxEvent event);
+
+/**
+ *  Calls the handler for %%event%% on the Active Panel with %%props%%,
+ *  returning true if there was a handler installed.
+ */
 bool ffx_emitEvent(FfxEvent event, FfxEventProps props);
+
+/**
+ *  Remove the handler for %%event%% on the Active Panel, returning true if
+ *  there was a handler installed.
+ */
 bool ffx_offEvent(FfxEvent event);
 
 
@@ -139,20 +182,44 @@ bool ffx_sendErrorReply(int id, uint32_t code, const char* mesage);
 ///////////////////////////////
 // Panel management
 
+/**
+ *  The function signature used by [[ffx_pushPanel]] to configure a Panel.
+ *
+ *  The %%scene%% and %%node%% can be used with the firefly-scene API
+ *  to configure the Panel view. The %%state%% is allocated on the task
+ *  stack. The %%initArg%% is the value passed into [[ffx_pushPanel]].
+ */
 typedef int (*FfxPanelInitFunc)(FfxScene scene, FfxNode node, void* state,
-  void* arg);
+  void* initArg);
 
-int ffx_pushPanel(FfxPanelInitFunc initFunc, size_t stateSize, void *arg);
+/**
+ *  Pushes a new Panel onto the Panel Stack, configured with %%initFunc%%.
+ *
+ *  The %%stateSize%% is used to allocate additional stack space for the
+ *  Panel, passed as the state to the [[FfxPanelInitFunc]].
+ */
+int ffx_pushPanel(FfxPanelInitFunc initFunc, size_t stateSize, void *initArg);
 
+/**
+ *  Pops the Active Panel from the Panel Stack, returning control
+ *  to the previous Panel. The %%status%% is used as the return value to
+ *  the corresponding [[ffx_pushPanel]].
+ */
 void ffx_popPanel(int status);
 
 
 ///////////////////////////////
 // Info Panel
 
+// Color used to cancel or reject; no action should be taken
 #define COLOR_CANCEL        (COLOR_RED)
+
+// Color used to approve an action; final with no additional action possible
 #define COLOR_APPROVE       (COLOR_GREEN)
-#define COLOR_BACK          (COLOR_BLUE)
+
+// Colos used when the result will only affect navigation, such as a "back"
+// button or to view raw data
+#define COLOR_NAVONLY       (COLOR_BLUE)
 
 typedef union FfxInfoArg {
     void *ptr;
@@ -167,14 +234,21 @@ typedef struct FfxInfoClickArg {
 } FfxInfoClickArg;
 
 
-
+/**
+ *  The function signature used by [[ffx_pushPanel]] to configure an Info
+ *  Panel.
+ */
 typedef int (*FfxInfoInitFunc)(void *info, void *state, void *initArg);
 
+/**
+ *  The function signature used as a callback by [[ffx_appendInfoEntry]] and
+ *  [[ffx_appendInfoButton]] when an entry or button is selected.
+ */
 typedef void (*FfxInfoClickFunc)(void *state, FfxInfoClickArg clickArg);
 
-// Move to pushInfo?
-//void ffx_appendInfoTitle(void *info, const char* title);
-
+/**
+ *  Adds an entry to an Info Panel.
+ */
 void ffx_appendInfoEntry(void *info, const char* heading, const char* value,
   FfxInfoClickFunc clickFunc, FfxInfoClickArg clickArg);
 
@@ -183,9 +257,19 @@ void ffx_appendInfoEntry(void *info, const char* heading, const char* value,
 //void ffx_appendInfoQRData(void *info, const uint8_t* data, size_t length,
 //  FfxInfoClickFunc clickFunc, FfxInfoClickArg clickArg);
 
+/**
+ *  Adds a button to an Info Panel. Buttons should be the last entries
+ *  added to an Info Panel.
+ */
 void ffx_appendInfoButton(void *info, const char* label, color_ffxt color,
   FfxInfoClickFunc clickFunc, FfxInfoClickArg clickArg);
 
+/**
+ *  Pushes a new Panel onto the Panel Stack, configured with %%initFunc%%.,
+ *
+ *  The [[ffx_appendInfoEntry]] and [[ffx_appendInfoButton]] can be used
+ *  to configure the Info Panel.
+ */
 int ffx_pushInfo(FfxInfoInitFunc initFunc, const char* title,
   size_t stateSize, void *initArg);
 
@@ -224,34 +308,73 @@ typedef struct FfxDeviceAttestation {
     // A random nonce selected by the device during signing
     uint8_t nonce[16];
 
-    // A challenge provided by the party requesting attestation
+    // The hash computed for the attestation payload.
     uint8_t challenge[CHALLENGE_LENGTH];
 
     // Device info
     uint32_t modelNumber;
     uint32_t serialNumber;
 
-    // The device RSA public key (e=65537)
+    // The device RSA pubkey (e=65537)
     uint8_t pubkeyN[384];
 
-    // Signature provided during provisioning that the given
-    // device information has been authenticated by Firefly
+    // Signature generated during provisioning (in the factory) for the
+    // device authenticating a genuine Firefly.
     uint8_t attestProof[64];
 
-
-    // The RSA attestion (signature) from this device
+    // The computed RSA signature; this uses the DS peripheral, for which
+    // the private key is inaccessible, even to the firmware.
     uint8_t signature[384];
 } FfxDeviceAttestation;
 
 
+/**
+ *  Returns the device serial number.
+ */
 int ffx_deviceSerialNumber();
 
+/**
+ *  Returns the device model number.
+ */
 int ffx_deviceModelNumber();
+
+/**
+ *  Populates %%nameOut%% with the device model name, up to %%length%%
+ *  characters. This adds a NULL-termination as long as length is not 0.
+ *
+ *  e.g. "Firefly Pixie (rev.6)"
+ */
 bool ffx_deviceModelName(char *nameOut, size_t length);
 
+/**
+ *  Returns the current device provisioning status. If the device is not
+ *  provisioned, the provisioned NVS partition is corrupt or the device
+ *  has not been initialized this will return an error.
+ *
+ *  This should basically never return an error.
+ */
 FfxDeviceStatus ffx_deviceStatus();
-bool ffx_deviceAttest(uint8_t *challenge, FfxDeviceAttestation *attest);
-bool ffx_deviceTestPrivkey(FfxEcPrivkey *privkey, uint32_t account);
+
+/**
+ *  Compute the attestation hash for %%paylaod%%.
+ */
+bool ffx_hashAttest(uint8_t *digestOut, const FfxCborCursor *payload);
+
+/**
+ *  Sign the attestation hash of %%payload%% with the device RSA privkey.
+ */
+bool ffx_deviceAttest(FfxDeviceAttestation *attestOut,
+  const FfxCborCursor *payload);
+
+/**
+ *  Populates %%privkeyOut%% with the %%account%% private key. This uses
+ *  the device DEV mnemonic with the "m/44'/60'/${ account }'/0/0" path.
+ *
+ *  Note: Testing ONLY! This should not be considered secure or safe and
+ *        is provided only to simplify experimentation and development
+ */
+bool ffx_deviceTestPrivkey(FfxEcPrivkey *privkeyOut, uint32_t account);
+
 
 
 ///////////////////////////////
