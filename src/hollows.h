@@ -41,6 +41,11 @@ void taskIoFunc(void* pvParameter);
 ///////////////////////////////
 // task-ble.c
 
+typedef struct TaskBleInit {
+    SemaphoreHandle_t ready;
+    uint32_t version;
+} TaskBleInit;
+
 void taskBleFunc(void* pvParameter);
 
 

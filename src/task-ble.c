@@ -42,6 +42,8 @@ typedef struct Connection {
     ConnState state;
     uint32_t connId;
 
+    uint32_t version;
+
     bool clearToSend;
 
     // Task Handle to notify the BLE Task loop to wake up
@@ -286,6 +288,14 @@ static bool dequeueCommand(uint8_t *buffer, size_t *length) {
             buffer[offset++] = v & 0xff;
 
             v = ffx_deviceSerialNumber();
+            buffer[offset++] = (v >> 24) & 0xff;
+            buffer[offset++] = (v >> 16) & 0xff;
+            buffer[offset++] = (v >> 8) & 0xff;
+            buffer[offset++] = v & 0xff;
+
+            // Early versions may be missing this; libraries should default
+            // to "0.0.1" if missing
+            v = conn.version;
             buffer[offset++] = (v >> 24) & 0xff;
             buffer[offset++] = (v >> 16) & 0xff;
             buffer[offset++] = (v >> 8) & 0xff;
@@ -1142,6 +1152,12 @@ static bool sendMessageChunk(uint8_t *buffer, size_t *length) {
 void ble_store_config_init(void);
 
 void taskBleFunc(void* pvParameter) {
+    TaskBleInit *init = pvParameter;
+    conn.version = init->version;
+
+    // The BLE has copied the init values; unblock the bootstrap process
+    xSemaphoreGive(init->ready);
+
     vTaskSetApplicationTaskTag( NULL, (void*)NULL);
 
     TaskStatus_t task;

@@ -79,7 +79,7 @@ void taskPrimeFunc(void* pvParameter) {
 }
 
 
-void ffx_init(FfxBackgroundFunc backgroundFunc, FfxInitFunc initFunc,
+void ffx_init(uint32_t version, FfxBackgroundFunc backgroundFunc, FfxInitFunc initFunc,
   void *arg) {
 
     vTaskSetApplicationTaskTag(NULL, (void*)NULL);
@@ -125,9 +125,20 @@ void ffx_init(FfxBackgroundFunc backgroundFunc, FfxInitFunc initFunc,
 
     // Start the Message task (handles BLE messages) [priority: 5]
     {
+        // Pointer passed to taskIoFunc to notify us when IO is ready
+        StaticSemaphore_t readyBuffer;
+
+        TaskBleInit init = {
+          .version = version
+            .ready = xSemaphoreCreateBinaryStatic(&readyBuffer)
+        };
+
         BaseType_t status = xTaskCreatePinnedToCore(&taskBleFunc, "ble",
-          14 * 256, NULL, PRIORITY_BLE, &taskBleHandle, 0);
+          14 * 256, &init, PRIORITY_BLE, &taskBleHandle, 0);
         assert(status && taskBleHandle != NULL);
+
+        // Wait for the IO task to complete setup
+        xSemaphoreTake(init.ready, portMAX_DELAY);
     }
 
     // Start app process [priority: 3];
