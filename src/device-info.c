@@ -8,6 +8,7 @@
 #include "nvs_flash.h"
 
 #include "firefly-bip32.h"
+#include "firefly-cbor.h"
 #include "firefly-ecc.h"
 #include "firefly-eth.h"
 #include "firefly-hash.h"
@@ -27,11 +28,13 @@
 #define ATTEST_HMAC_KEY     (HMAC_KEY2)
 
 
+// Loaded from eFuses
 static int modelNumber = 0;
 static int serialNumber = 0;
 
 static FfxDeviceStatus status = FfxDeviceStatusNotInitialized;
 
+// Loaded from NVS
 static uint8_t attestProof[64] = { 0 };
 static uint8_t pubkeyN[384] = { 0 };
 esp_ds_data_t *cipherdata = NULL;
@@ -175,6 +178,9 @@ static FfxDeviceStatus _device_attest(uint8_t *challenge, uint8_t *nonce,
     if (status) { return status; }
 
     attest->version = 1;
+    attest->modelNumber = modelNumber;
+    attest->serialNumber = serialNumber;
+
     memcpy(attest->nonce, nonce, 16);
     memcpy(attest->challenge, challenge, 32);
     memcpy(&attest->pubkeyN, pubkeyN, sizeof(pubkeyN));
@@ -266,7 +272,162 @@ static FfxDeviceStatus _device_attest(uint8_t *challenge, uint8_t *nonce,
 }
 
 
-bool ffx_deviceAttest(uint8_t *challenge, FfxDeviceAttestation *attest) {
+// @TODO: Type checking should be added to everything
+
+static bool setValue(uint8_t *data, FfxCborCursor *cursor) {
+    if (!ffx_cbor_checkType(cursor, FfxCborTypeData)) { return false; }
+    FfxDataResult value = ffx_cbor_getData(cursor);
+    if (value.length > 32) { return false; }
+    memset(data, 0, 32 - value.length);
+    memcpy(&data[32 - value.length], value.bytes, value.length);
+    return true;
+}
+
+// scratch[0:32] = keccak256(scratch[0:32] ++ cursor)
+static bool accumulate(uint8_t *scratch, FfxCborCursor *cursor) {
+    if (!setValue(&scratch[32], cursor)) { return false; }
+    ffx_hash_keccak256(scratch, scratch, 64);
+    return true;
+}
+
+
+#define SPACE         (0)
+#define OPEN_PAREN    (1)
+#define CLOSE_PAREN   (2)
+#define COMMA         (3)
+const uint8_t chars[] = { 32, 40, 41, 44 };
+
+
+static bool computePrefix(uint8_t *scratch, const FfxCborCursor *cursor) {
+    FfxCborCursor follow;
+
+    {
+        follow = ffx_cbor_followKey(cursor, "version");
+        FfxValueResult value = ffx_cbor_getValue(&follow);
+        if (value.value != 1) { return false; }
+        scratch[31] = 1;
+    }
+
+    setValue(scratch, &follow);
+
+    {
+        FfxCborCursor domain = ffx_cbor_followKey(cursor, "domain");
+        follow = ffx_cbor_followKey(&domain, "chainId");
+        if (!accumulate(scratch, &follow)) { return false; }
+
+        follow = ffx_cbor_followKey(&domain, "contract");
+        if (!accumulate(scratch, &follow)) { return false; }
+    }
+
+    // action ++ "(" ++ params.map(`type name`).join(",") ++ ")"
+    {
+        FfxKeccak256Context ctx;
+        ffx_hash_initKeccak256(&ctx);
+
+        follow = ffx_cbor_followKey(cursor, "action");
+        FfxDataResult value = ffx_cbor_getData(&follow);// @TODO:check type
+        ffx_hash_updateKeccak256(&ctx, value.bytes, value.length);
+
+        // "("
+        ffx_hash_updateKeccak256(&ctx, &chars[OPEN_PAREN], 1);
+
+        bool first = true;
+
+        FfxCborCursor params = ffx_cbor_followKey(cursor, "params");
+        FfxCborIterator iter = ffx_cbor_iterate(&params);
+        while (ffx_cbor_nextChild(&iter)) {
+
+            // ","
+            if (!first) {
+                ffx_hash_updateKeccak256(&ctx, &chars[OPEN_PAREN], 1);
+            }
+            first = false;
+
+            // type
+            follow = ffx_cbor_followKey(&iter.child, "type");
+            value = ffx_cbor_getData(&follow);
+            ffx_hash_updateKeccak256(&ctx, value.bytes, value.length);
+
+            // " "
+            ffx_hash_updateKeccak256(&ctx, &chars[SPACE], 1);
+
+            // name
+            follow = ffx_cbor_followKey(&iter.child, "name");
+            value = ffx_cbor_getData(&follow);
+            ffx_hash_updateKeccak256(&ctx, value.bytes, value.length);
+        }
+
+        // ")"
+        ffx_hash_updateKeccak256(&ctx, &chars[CLOSE_PAREN], 1);
+
+        ffx_hash_finalKeccak256(&ctx, &scratch[32]);
+
+        ffx_hash_keccak256(scratch, scratch, 64);
+    }
+
+    scratch[32] = 0;
+    ffx_hash_keccak256(scratch, scratch, 33);
+
+    return true;
+}
+
+static bool hashAttest(uint8_t *scratch, const FfxCborCursor *cursor) {
+
+    // Prefix
+    if (!computePrefix(scratch, cursor)) { return false; }
+
+    // Salt
+    FfxCborCursor follow = ffx_cbor_followKey(cursor, "salt");
+    FfxDataResult value = ffx_cbor_getData(&follow);
+
+    if (!ffx_cbor_checkType(&follow, FfxCborTypeData) || value.length != 32) {
+        return false;
+    }
+
+    memcpy(&scratch[32], value.bytes, 32);
+    ffx_hash_keccak256(scratch, scratch, 64);
+
+    // Parameters:
+    FfxCborCursor params = ffx_cbor_followKey(cursor, "params");
+    FfxCborIterator iter = ffx_cbor_iterate(&params);
+    while (ffx_cbor_nextChild(&iter)) {
+        // Type
+        follow = ffx_cbor_followKey(&iter.child, "type");
+        value = ffx_cbor_getData(&follow);
+
+        // Strings and Bytes get compressed via keccak256
+        bool dynamic = false;
+        if (value.length == 5) {
+            if (memcmp(value.bytes, "bytes", 5) == 0) {
+                dynamic = true;
+            } else if (memcmp(value.bytes, "string", 5) == 0) {
+                dynamic = true;
+            }
+        }
+
+        // Value
+        follow = ffx_cbor_followKey(&iter.child, "value");
+        value = ffx_cbor_getData(&follow);
+
+        if (dynamic) {
+            ffx_hash_keccak256(&scratch[32], value.bytes, value.length);
+        } else {
+            if (value.length > 32) { return false; }
+            memset(&scratch[32], 0, 32 - value.length);
+            memcpy(&scratch[64 - value.length], value.bytes, value.length);
+        }
+
+        ffx_hash_keccak256(scratch, scratch, 64);
+    }
+
+    scratch[32] = 0;
+    ffx_hash_keccak256(scratch, scratch, 33);
+
+    return true;
+}
+
+bool ffx_deviceAttest(FfxDeviceAttestation *attestOut,
+  const FfxCborCursor *payload) {
 
     // Create a random nonce
     uint8_t nonce[16];
@@ -276,9 +437,18 @@ bool ffx_deviceAttest(uint8_t *challenge, FfxDeviceAttestation *attest) {
     // the external API cannot expose internal values.
     nonce[0] &= 0x7f;
 
-    return (_device_attest(challenge, nonce, attest) == FfxDeviceStatusOk);
+    uint8_t scratch[64] = { 0 };
+    if (!hashAttest(scratch, payload)) { return false; }
+
+    return (_device_attest(scratch, nonce, attestOut) == FfxDeviceStatusOk);
 }
 
+bool ffx_hashAttest(uint8_t *digestOut, const FfxCborCursor *payload) {
+    uint8_t scratch[64] = { 0 };
+    if (!hashAttest(scratch, payload)) { return false; }
+    memcpy(digestOut, scratch, 32);
+    return true;
+}
 
 static bool _device_testPrivkey(FfxEcPrivkey *privkey, uint32_t account) {
     if (status || cipherdata == NULL || account > 0x7fffffff) { return false; }
