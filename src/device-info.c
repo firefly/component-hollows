@@ -7,6 +7,8 @@
 #include "esp_random.h"
 #include "nvs_flash.h"
 
+#include "firefly-display.h"
+
 #include "firefly-bip32.h"
 #include "firefly-cbor.h"
 #include "firefly-ecc.h"
@@ -29,8 +31,8 @@
 
 
 // Loaded from eFuses
-static int modelNumber = 0;
-static int serialNumber = 0;
+static int modelNumber = -1;
+static int serialNumber = -1;
 
 static FfxDeviceStatus status = FfxDeviceStatusNotInitialized;
 
@@ -50,12 +52,12 @@ static void reverseBytes(uint8_t *data, size_t length) {
     }
 }
 
-int ffx_deviceModelNumber() { return modelNumber; }
-int ffx_deviceSerialNumber() { return serialNumber; }
+//int ffx_deviceModelNumber() { return modelNumber; }
+//int ffx_deviceSerialNumber() { return serialNumber; }
 
-FfxDeviceStatus ffx_deviceStatus() { return status; }
+//FfxDeviceStatus ffx_deviceStatus() { return status; }
 
-bool ffx_deviceModelName(char *output, size_t length) {
+bool ffx_deviceModelName(char *output, size_t length, FfxDeviceInfo *info) {
     if (length == 0) { return false; }
 
     if (status != FfxDeviceStatusOk) {
@@ -63,22 +65,147 @@ bool ffx_deviceModelName(char *output, size_t length) {
         return false;
     }
 
-    if ((modelNumber >> 8) == 1) {
-        int l = snprintf(output, length, "Firefly Pixie (DevKit rev.%d)",
-          modelNumber & 0xff);
-        if (l >= length) { return false; }
-        return true;
+    int rev = (modelNumber & 0xff);
+
+    switch (modelNumber >> 8) {
+        case 1: {
+            int l = snprintf(output, length, "Firefly Pixie (rev.%d)", rev);
+            if (l >= length) { return false; }
+           return true;
+        }
+        case 2: {
+            int l = snprintf(output, length, "Firefly Gremlin (rev.G%d)", rev);
+            if (l >= length) { return false; }
+           return true;
+        }
     }
 
-    int l = snprintf(output, length, "[Unknown model: 0x%x]", modelNumber);
+    int l = snprintf(output, length, "[Unknown Model: 0x%x]", modelNumber);
     if (l >= length) { return false; }
     return true;
 }
 
-FfxDeviceStatus ffx_deviceInit() {
+FfxDeviceInfo ffx_deviceModelInfo(int modelNumber) {
+    FfxDeviceInfo result = {
+        .status = FfxDeviceStatusUnknown,
+        .modelNumber = modelNumber,
+        .serialNumber = -1
+    };
+
+    if (status) { return result; }
+
+    result.model = (modelNumber >> 8) & 0xff;
+    result.revision = modelNumber & 0xff;
+
+    switch (result.model) {
+
+        case 1: // Pixie
+            result.model = FfxModelNamePixie;
+
+            switch (result.revision) {
+                case 2:
+                    result.options = FfxDeviceOptionButtonGPIO;
+
+                    result.displayBus = FfxDisplaySpiBus2;
+                    result.displayDCPin = 0;
+                    result.displayResetPin = 5;
+
+                    result.buttonCount = 4;
+                    result.buttonPin[0] = 2;
+                    result.buttonPin[1] = 3;
+                    result.buttonPin[2] = 4;
+                    result.buttonPin[3] = 1;
+
+                    break;
+
+                case 4:
+                    result.options = FfxDeviceOptionButtonGPIO |
+                      FfxDeviceOptionPixels;
+
+                    result.displayBus = FfxDisplaySpiBus2_nocs;
+                    result.displayDCPin = 4;
+                    result.displayResetPin = 5;
+
+                    result.buttonCount = 4;
+                    result.buttonPin[0] = 10;
+                    result.buttonPin[1] = 8;
+                    result.buttonPin[2] = 3;
+                    result.buttonPin[3] = 2;
+
+                    result.pixelCount = 1;
+                    result.pixelPin = 9;
+                    break;
+
+                case 5: case 6:
+                    result.options = FfxDeviceOptionButtonGPIO |
+                      FfxDeviceOptionPixels;
+
+                    result.displayBus = FfxDisplaySpiBus2_nocs;
+                    result.displayDCPin = 4;
+                    result.displayResetPin = 5;
+
+                    result.buttonCount = 4;
+                    result.buttonPin[0] = 10;
+                    result.buttonPin[1] = 8;
+                    result.buttonPin[2] = 3;
+                    result.buttonPin[3] = 2;
+
+                    result.pixelCount = 4;
+                    result.pixelPin = 9;
+                    break;
+
+                default:
+                    result.model = FfxModelNameUnknown;
+                    result.revision = 0;
+                    break;
+            }
+            break;
+
+        case 2: // Gremlin
+            result.model = FfxModelNameGremlin;
+
+            switch (result.revision) {
+                case 1:
+                    result.options = FfxDeviceOptionDPad;
+
+                    result.displayBus = FfxDisplaySpiBus2_nocs;
+                    result.displayDCPin = 4;
+                    result.displayResetPin = 5;
+
+                    result.buttonCount = 8;
+                    result.buttonShifter.strobePin = 10;
+                    result.buttonShifter.clockPin = 9;
+                    result.buttonShifter.dataPin = 8;
+
+                    break;
+
+                default:
+                    result.model = FfxModelNameUnknown;
+                    result.revision = 0;
+                    break;
+            }
+            break;
+
+        default:
+            result.model = FfxModelNameUnknown;
+            result.revision = 0;;
+            break;
+    }
+
+    return result;
+}
+
+FfxDeviceInfo ffx_deviceInfo() {
+    FfxDeviceInfo result = ffx_deviceModelInfo(modelNumber);
+    result.status = status;
+    result.serialNumber = serialNumber;
+    return result;
+}
+
+FfxDeviceInfo ffx_deviceInit() {
     // Already loaded or failed to laod
     if (status == FfxDeviceStatusOk || status != FfxDeviceStatusNotInitialized) {
-        return status;
+        return ffx_deviceInfo();
     }
 
     // Semphore we use to provide async access to the account 0 test key
@@ -100,7 +227,7 @@ FfxDeviceStatus ffx_deviceInit() {
     // Invalid eFuse info
     if (version != 0x00000001 || _modelNumber == 0 || _serialNumber == 0) {
         status = FfxDeviceStatusMissingEfuse;
-        return status;
+        return ffx_deviceInfo();
     }
 
     // Open the NVS partition
@@ -109,13 +236,13 @@ FfxDeviceStatus ffx_deviceInit() {
         int ret = nvs_flash_init_partition("attest");
         if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
             status = FfxDeviceStatusMissingNvs;
-            return status;
+            return ffx_deviceInfo();
         }
 
         ret = nvs_open_from_partition("attest", "secure", NVS_READONLY, &nvs);
         if (ret) {
             status = FfxDeviceStatusMissingNvs;
-            return status;
+            return ffx_deviceInfo();
         }
     }
 
@@ -130,7 +257,7 @@ FfxDeviceStatus ffx_deviceInit() {
             free(cipherdata);
             cipherdata = NULL;
             status = FfxDeviceStatusMissingNvs;
-            return status;
+            return ffx_deviceInfo();
         }
     }
 
@@ -140,7 +267,7 @@ FfxDeviceStatus ffx_deviceInit() {
         int ret = nvs_get_blob(nvs, "attest", attestProof, &olen);
         if (ret || olen != 64) {
             status = FfxDeviceStatusMissingNvs;
-            return status;
+            return ffx_deviceInfo();
         }
     }
 
@@ -150,7 +277,7 @@ FfxDeviceStatus ffx_deviceInit() {
         int ret = nvs_get_blob(nvs, "pubkey-n", pubkeyN, &olen);
         if (ret || olen != 384) {
             status = FfxDeviceStatusMissingNvs;
-            return status;
+            return ffx_deviceInfo();
         }
     }
 
@@ -158,7 +285,7 @@ FfxDeviceStatus ffx_deviceInit() {
     modelNumber = _modelNumber;
 
     status = FfxDeviceStatusOk;
-    return status;
+    return ffx_deviceInfo();
 }
 
 // The PKCS#1 v1.5 prefix to place before a 32-byte payload:

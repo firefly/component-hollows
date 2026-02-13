@@ -21,7 +21,7 @@ typedef enum PanelStyle {
 ///////////////////////////////
 // device-info.c
 
-FfxDeviceStatus ffx_deviceInit();
+FfxDeviceInfo ffx_deviceInit();
 
 
 ///////////////////////////////

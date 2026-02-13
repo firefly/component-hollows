@@ -20,6 +20,7 @@
 
 #include "build-defs.h"
 #include "config.h"
+#include "hollows.h"
 #include "utils.h"
 
 
@@ -241,6 +242,8 @@ static void queueCommandRequest(uint8_t command) {
 static bool dequeueCommand(uint8_t *buffer, size_t *length) {
     *length = 0;
 
+    FfxDeviceInfo device = ffx_deviceInfo();
+
     xSemaphoreTake(commands.lock, portMAX_DELAY);
     do {
         if (commands.length == 0) { break; }
@@ -281,13 +284,13 @@ static bool dequeueCommand(uint8_t *buffer, size_t *length) {
             buffer[offset++] = msg.length >> 8;
             buffer[offset++] = msg.length & 0xff;
 
-            uint32_t v = ffx_deviceModelNumber();
+            uint32_t v = device.modelNumber;
             buffer[offset++] = (v >> 24) & 0xff;
             buffer[offset++] = (v >> 16) & 0xff;
             buffer[offset++] = (v >> 8) & 0xff;
             buffer[offset++] = v & 0xff;
 
-            v = ffx_deviceSerialNumber();
+            v = device.serialNumber;
             buffer[offset++] = (v >> 24) & 0xff;
             buffer[offset++] = (v >> 16) & 0xff;
             buffer[offset++] = (v >> 8) & 0xff;
@@ -421,8 +424,6 @@ static void processMessage() {
         return;
     }
 
-    //dumpBuffer("Process Message", msg.data, msg.length);
-
     uint8_t checksum[32];
     //FfxSha256Context ctx;
     //ffx_hash_initSha256(&ctx);
@@ -446,8 +447,6 @@ static void processMessage() {
 
     if (msg.replyId) {
         msg.state = MessageStateReceived;
-printf("FOO: %ld %s\n", msg.id, msg.method);
-ffx_cbor_dump(&msg.params);
 
         // The params gets cloned within the emitMessageEvents.
         bool accept = ffx_emitEvent(FfxEventMessage, (FfxEventProps){
@@ -1063,7 +1062,6 @@ bool ffx_sendReply(int id, const FfxCborBuilder *result) {
     // Append the payload
     ffx_cbor_appendString(&builder, "result");
     ffx_cbor_appendCborBuilder(&builder, result);
-
     sendMessage(&builder);
 
     xSemaphoreGive(msg.lock);
@@ -1179,10 +1177,13 @@ void taskBleFunc(void* pvParameter) {
     // Device Information Service Data
 
     char disModelNumber[32];
-    ffx_deviceModelName(disModelNumber, sizeof(disModelNumber) - 1);
-    Payload payloadDisModelNumber = {
-        .data = (uint8_t*)disModelNumber, .length = strlen(disModelNumber)
-    };
+    Payload payloadDisModelNumber = { 0 };
+    {
+        FfxDeviceInfo info = ffx_deviceInfo();
+        ffx_deviceModelName(disModelNumber, sizeof(disModelNumber) - 1, &info);
+        payloadDisModelNumber.data = (uint8_t*)disModelNumber;
+        payloadDisModelNumber.length = strlen(disModelNumber);
+    }
 
     Payload payloadDisManufacturerName = {
         .data = (uint8_t*)MANUFACTURER_NAME,

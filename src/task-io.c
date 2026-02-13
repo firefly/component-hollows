@@ -6,6 +6,14 @@
 #include <hal/gpio_ll.h>
 #include "esp_random.h"
 
+#include "soc/gpio_reg.h"
+#include "soc/soc.h"        // REG_READ()
+
+//#include "soc/gpio_reg.h"
+//#include "soc/gpio_struct.h"   // gives you GPIO.in / GPIO.in1
+
+
+
 #include "firefly-display.h"
 #include "firefly-scene.h"
 
@@ -24,7 +32,16 @@
 typedef struct KeypadContext {
     FfxKeys keys;
 
-    uint32_t pins;
+    uint32_t gpioPins;
+
+    union {
+        uint8_t gpioPin[4];
+        struct {
+            uint8_t strobePin;
+            uint8_t clockPin;
+            uint8_t dataPin;
+        } shifter;
+    };
 
     uint32_t count;
     uint32_t samples[KEYPAD_SAMPLE_COUNT];
@@ -33,32 +50,64 @@ typedef struct KeypadContext {
     uint32_t latch;
 } KeypadContext;
 
-static FfxKeys remapKeypadPins(uint32_t value) {
-    FfxKeys keys = 0;
-    if (value & PIN_BUTTON_1) { keys |= FfxKeyCancel; }
-    if (value & PIN_BUTTON_2) { keys |= FfxKeyOk; }
-    if (value & PIN_BUTTON_3) { keys |= FfxKeyNorth; }
-    if (value & PIN_BUTTON_4) { keys |= FfxKeySouth; }
-    return keys;
-}
+static void keypad_init(KeypadContext *context, FfxDeviceInfo *device) {
+    memset(context, 0, sizeof(KeypadContext));
 
-static void keypad_init(KeypadContext *context) {
-    uint32_t pins = PIN_BUTTON_1 | PIN_BUTTON_2 | PIN_BUTTON_3 | PIN_BUTTON_4;
-    context->pins = pins;
+    if (device->options & FfxDeviceOptionButtonGPIO) {
+        // Copy the GPIO pin details and prepare a pin mask for configuration
+        for (int i = 0; i < device->buttonCount; i++) {
+            context->gpioPins |= BIT(device->buttonPin[i]);
+            context->gpioPin[i] = device->buttonPin[i];
+        }
 
-    context->keys = FfxKeyCancel | FfxKeyOk | FfxKeyNorth | FfxKeySouth;
+        gpio_config_t io_conf = {
+            .pin_bit_mask = context->gpioPins,
+            .mode = GPIO_MODE_INPUT,
+            .pull_up_en = GPIO_PULLUP_ENABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE
+        };
+        gpio_config(&io_conf);
+
+    } else {
+
+        uint8_t dataPin = device->buttonShifter.dataPin;
+        uint8_t strobePin = device->buttonShifter.strobePin;
+        uint8_t clockPin = device->buttonShifter.clockPin;
+
+        context->shifter.dataPin = dataPin;
+        context->shifter.strobePin = strobePin;
+        context->shifter.clockPin = clockPin;
+
+        // @TODO: Can I reuse this struct?
+        gpio_config_t i_conf = {
+            .pin_bit_mask = BIT(dataPin),
+            .mode = GPIO_MODE_INPUT,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE
+        };
+        gpio_config(&i_conf);
+
+        gpio_config_t o_conf = {
+            .pin_bit_mask = BIT(strobePin) | BIT(clockPin),
+            .mode = GPIO_MODE_OUTPUT,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE
+        };
+        gpio_config(&o_conf);
+
+        gpio_set_level(clockPin, 0);
+        gpio_set_level(strobePin, 1);
+
+        context->keys |= FfxKeyA | FfxKeyB | FfxKeyEast | FfxKeyWest;
+    }
+
+    context->keys |= FfxKeyCancel | FfxKeyOk | FfxKeyNorth | FfxKeySouth;
 
     // Setup the GPIO input pins
 //    #include "driver/gpio.h"
-
-    gpio_config_t io_conf = {
-        .pin_bit_mask = pins,
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE
-    };
-    gpio_config(&io_conf);
 
     // Setup the GPIO input pins
     /*
@@ -72,7 +121,29 @@ static void keypad_init(KeypadContext *context) {
 }
 
 static void keypad_sample(KeypadContext *context) {
-    context->samples[context->count % KEYPAD_SAMPLE_COUNT] = ~(REG_READ(GPIO_IN_REG));
+    uint32_t sample = 0;
+
+    if (context->gpioPins) {
+        sample = ~REG_READ(GPIO_IN_REG);
+
+    } else {
+        gpio_set_level(context->shifter.strobePin, 0);
+        esp_rom_delay_us(1);
+        gpio_set_level(context->shifter.strobePin, 1);
+        esp_rom_delay_us(1);
+
+        for (int i = 0; i < 8; i++) {
+            sample <<= 1;
+            sample |= (~gpio_get_level(context->shifter.dataPin)) & 0x1;
+
+            gpio_set_level(context->shifter.clockPin, 1);
+            esp_rom_delay_us(1);
+            gpio_set_level(context->shifter.clockPin, 0);
+            esp_rom_delay_us(1);
+        }
+    }
+
+    context->samples[context->count % KEYPAD_SAMPLE_COUNT] = sample;
     context->count++;
 }
 
@@ -81,22 +152,47 @@ static void keypad_latch(KeypadContext *context) {
     if (samples > KEYPAD_SAMPLE_COUNT) { samples = KEYPAD_SAMPLE_COUNT; }
 
     uint32_t latch = 0;
-    for (uint32_t i = 0; i < 32; i++) {
-        uint32_t mask = (1 << i);
-        if ((context->pins & mask) == 0) { continue; }
+    for (uint32_t i = 0; i < 8; i++) {
+        uint32_t key = (1 << i);
+        uint32_t mask = key;
+
+        if (context->gpioPins) {
+            // Remap GPIO-based devices; samples stored actual pin values
+            // instead of key values, so we must check the associated pin
+            // within the sample for the given key.
+            switch (key) {
+                case FfxKeyCancel:
+                    mask = BIT(context->gpioPin[0]);
+                    break;
+                case FfxKeyOk:
+                    mask = BIT(context->gpioPin[1]);
+                    break;
+                case FfxKeyNorth:
+                    mask = BIT(context->gpioPin[2]);
+                    break;
+                case FfxKeySouth:
+                    mask = BIT(context->gpioPin[3]);
+                    break;
+                default:
+                    // Not a button this device has
+                    mask = 0;
+                    break;
+            }
+            if (mask == 0) { continue; }
+        }
 
         uint32_t count = 0;
         for (uint32_t s = 0; s < samples; s++) {
             if (context->samples[s] & mask) { count++; }
         }
 
-        if (count * 2 > samples) { latch |= mask; }
+        if (count * 2 > samples) { latch |= key; }
     }
 
     context->count = 0;
 
     context->previousLatch = context->latch;
-    context->latch = remapKeypadPins(latch);
+    context->latch = latch;
 }
 
 static FfxKeys keypad_didChange(KeypadContext *context, FfxKeys keys) {
@@ -143,6 +239,7 @@ static void freeSpace(uint8_t *pointer, void *arg) {
     free(pointer);
 }
 
+
 /*
 typedef struct Callback {
   FfxNodeAnimationCompletionFunc callFunc;
@@ -188,12 +285,15 @@ void taskIoFunc(void* pvParameter) {
 
     vTaskSetApplicationTaskTag( NULL, (void*) NULL);
 
+    FfxDeviceInfo device = ffx_deviceInfo();
+
     FfxDisplayContext display;
     {
         uint32_t t0 = ticks();
 
-        display = ffx_display_init(DISPLAY_BUS, PIN_DISPLAY_DC,
-          PIN_DISPLAY_RESET, FfxDisplayRotationRibbonRight, renderScene, NULL);
+        display = ffx_display_init(device.displayBus, device.displayDCPin,
+          device.displayResetPin, FfxDisplayRotationRibbonRight, renderScene,
+          NULL);
 
         FFX_LOG("init display: dt=%ldms", ticks() - t0);
     }
@@ -202,7 +302,7 @@ void taskIoFunc(void* pvParameter) {
 
 
     KeypadContext keypad = { 0 };
-    keypad_init(&keypad);
+    keypad_init(&keypad, &device);
 
     color_ffxt colorRamp1[] = {
         ffx_color_hsva(275, 0x3f, 0x00, 0x0c),
@@ -282,7 +382,8 @@ void taskIoFunc(void* pvParameter) {
         ffx_color_rgba(0, 0, 0, 0),
     };
 
-    pixels = pixels_init(PIXEL_COUNT, PIN_PIXELS);
+    //pixels = pixels_init(PIXEL_COUNT, PIN_PIXELS);
+    pixels = pixels_init(device.pixelCount, device.pixelPin);
     pixels_animatePixel(pixels, 0, animateColorRamp, 780, 0, colorRamp1);
     pixels_animatePixel(pixels, 1, animateColorRamp, 780, 0, colorRamp2);
     pixels_animatePixel(pixels, 2, animateColorRamp, 780, 0, colorRamp3);

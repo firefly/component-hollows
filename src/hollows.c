@@ -88,15 +88,15 @@ void ffx_init(uint32_t version, FfxBackgroundFunc backgroundFunc, FfxInitFunc in
     {
         uint32_t t0 = ticks();
 
-        FfxDeviceStatus status = ffx_deviceInit();
-        if (status == FfxDeviceStatusOk) {
+        FfxDeviceInfo info = ffx_deviceInit();
+        if (info.status == FfxDeviceStatusOk) {
             char modelName[32] = { 0 };
-            ffx_deviceModelName(modelName, sizeof(modelName) - 1);
+            ffx_deviceModelName(modelName, sizeof(modelName) - 1, &info);
             FFX_LOG("device: serial=%d model=0x%x modelName='%s' (dt=%ld)",
-              ffx_deviceSerialNumber(), ffx_deviceModelNumber(), modelName,
+              info.serialNumber, info.modelNumber, modelName,
               ticks() - t0);
         } else {
-            FFX_LOG("device: status=%d (unprovisioned)", status);
+            FFX_LOG("device: status=%d (unprovisioned)", info.status);
         }
     }
 
@@ -129,7 +129,7 @@ void ffx_init(uint32_t version, FfxBackgroundFunc backgroundFunc, FfxInitFunc in
         StaticSemaphore_t readyBuffer;
 
         TaskBleInit init = {
-          .version = version
+            .version = version,
             .ready = xSemaphoreCreateBinaryStatic(&readyBuffer)
         };
 

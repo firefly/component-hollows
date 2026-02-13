@@ -62,14 +62,14 @@ typedef uint16_t FfxKeys;
 
 typedef enum FfxKey {
     FfxKeyNone          = 0,
-    FfxKeyNorth         = (1 << 0),
-    FfxKeyEast          = (1 << 1),
-    FfxKeySouth         = (1 << 2),
-    FfxKeyWest          = (1 << 3),
-    FfxKeyOk            = (1 << 4),
-    FfxKeyCancel        = (1 << 5),
-    FfxKeyStart         = (1 << 6),
-    FfxKeySelect        = (1 << 7),
+    FfxKeyA             = (1 << 0),
+    FfxKeyB             = (1 << 1),
+    FfxKeyOk            = (1 << 2),
+    FfxKeyCancel        = (1 << 3),
+    FfxKeyNorth         = (1 << 4),
+    FfxKeySouth         = (1 << 5),
+    FfxKeyEast          = (1 << 6),
+    FfxKeyWest          = (1 << 7),
     FfxKeyAll           = (0xff),
 } FfxKey;
 
@@ -257,6 +257,8 @@ void ffx_appendInfoEntry(void *info, const char* heading, const char* value,
 //void ffx_appendInfoQRData(void *info, const uint8_t* data, size_t length,
 //  FfxInfoClickFunc clickFunc, FfxInfoClickArg clickArg);
 
+void ffx_appendInfoString(void *info, const char* heading, const char* value);
+
 /**
  *  Adds a button to an Info Panel. Buttons should be the last entries
  *  added to an Info Panel.
@@ -288,6 +290,12 @@ int ffx_pushInfo(FfxInfoInitFunc initFunc, const char* title,
 ///////////////////////////////
 // Device Info
 
+typedef enum FfxModelName {
+    FfxModelNameUnknown  = 0,
+    FfxModelNamePixie    = 1,
+    FfxModelNameGremlin  = 2,
+} FfxModelName;
+
 typedef enum FfxDeviceStatus {
     FfxDeviceStatusOk              = 0,
 
@@ -297,7 +305,64 @@ typedef enum FfxDeviceStatus {
     FfxDeviceStatusMissingEfuse    = 40,
     FfxDeviceStatusMissingNvs      = 41,
     FfxDeviceStatusOutOfMemory     = 50,
+
+    // Place holder
+    FfxDeviceStatusUnknown         = 255,
 } FfxDeviceStatus;
+
+typedef enum FfxDeviceOption {
+    FfxDeviceOptionDPad           = (1 << 0),
+    FfxDeviceOptionButtonGPIO     = (1 << 1),
+    FfxDeviceOptionPixels         = (1 << 2),
+    FfxDeviceOptionBattery        = (1 << 3),
+    FfxDeviceOptionSecureElement  = (1 << 4),
+} FfxDeviceOption;
+
+typedef struct FfxDeviceInfo {
+    FfxDeviceStatus status;
+
+    // Full internal model number and serial number
+    int modelNumber;
+    int serialNumber;
+
+    uint32_t options;
+
+    // Unknown: 0, Pixie: 1, Gremlin: 2
+    FfxModelName model;
+
+    // Board revision
+    uint8_t revision;
+
+    // Display SPI bus configuration
+    uint32_t displayBus;
+    uint8_t displayDCPin;
+    uint8_t displayResetPin;
+
+    // Button configuration
+    uint8_t buttonCount;
+
+    // If (options & FfxDeviceOptionButtonGPIO):
+    //  - North, South, Ok, Cancel map to buttonPins on the MCU
+    // Otherwise:
+    //  - A shift register connects the buttons the the MCU
+    //  - Strobe to latch the buttons, Shifting to read data
+    //  - A, B, X (Ok), Y (Cancel), North, South, West, East
+    union {
+        uint8_t buttonPin[4];
+        struct {
+            uint8_t strobePin;
+            uint8_t clockPin;
+            uint8_t dataPin;
+        } buttonShifter;
+    };
+
+    // Addressable LED configuration
+    uint8_t pixelCount;
+    uint8_t pixelPin;
+
+} FfxDeviceInfo;
+
+
 
 #define CHALLENGE_LENGTH    (32)
 
@@ -325,18 +390,23 @@ typedef struct FfxDeviceAttestation {
     // The computed RSA signature; this uses the DS peripheral, for which
     // the private key is inaccessible, even to the firmware.
     uint8_t signature[384];
+
 } FfxDeviceAttestation;
 
+
+FfxDeviceInfo ffx_deviceInfo();
+
+FfxDeviceInfo ffx_deviceModelInfo(int modelNumber);
 
 /**
  *  Returns the device serial number.
  */
-int ffx_deviceSerialNumber();
+//int ffx_deviceSerialNumber();
 
 /**
  *  Returns the device model number.
  */
-int ffx_deviceModelNumber();
+//int ffx_deviceModelNumber();
 
 /**
  *  Populates %%nameOut%% with the device model name, up to %%length%%
@@ -344,7 +414,7 @@ int ffx_deviceModelNumber();
  *
  *  e.g. "Firefly Pixie (rev.6)"
  */
-bool ffx_deviceModelName(char *nameOut, size_t length);
+bool ffx_deviceModelName(char *output, size_t length, FfxDeviceInfo *info);
 
 /**
  *  Returns the current device provisioning status. If the device is not
@@ -353,7 +423,7 @@ bool ffx_deviceModelName(char *nameOut, size_t length);
  *
  *  This should basically never return an error.
  */
-FfxDeviceStatus ffx_deviceStatus();
+//FfxDeviceStatus ffx_deviceStatus();
 
 /**
  *  Compute the attestation hash for %%paylaod%%.

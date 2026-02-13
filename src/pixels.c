@@ -196,6 +196,8 @@ PixelsContext pixels_init(size_t pixelCount, uint32_t pin) {
     _PixelsContext *context = malloc(sizeof(_PixelsContext));
     memset(context, 0, sizeof(_PixelsContext));
 
+    if (pixelCount == 0) { return context; }
+
     context->pixelCount = pixelCount;
 
     context->pixels = malloc(3 * pixelCount);
@@ -272,6 +274,8 @@ void pixels_tick(PixelsContext _context) {
     _PixelsContext *context = (_PixelsContext*)_context;
     context->tick = now;
 
+    if (context->pixelCount == 0) { return; }
+
     color_ffxt colors[LED_COUNT];
 
     if (context->animatePixels) {
@@ -329,6 +333,8 @@ void pixels_tick(PixelsContext _context) {
 
 void pixels_free(PixelsContext _context) {
     _PixelsContext *context = (_PixelsContext*)_context;
+
+    if (context->pixelCount == 0) { return; }
 
     if (context->encoder) {
         rmt_led_strip_encoder_t *led_encoder = __containerof(context->encoder, rmt_led_strip_encoder_t, base);
