@@ -68,8 +68,8 @@ typedef enum FfxKey {
     FfxKeyCancel        = (1 << 3),
     FfxKeyNorth         = (1 << 4),
     FfxKeySouth         = (1 << 5),
-    FfxKeyEast          = (1 << 6),
-    FfxKeyWest          = (1 << 7),
+    FfxKeyWest          = (1 << 6),
+    FfxKeyEast          = (1 << 7),
     FfxKeyAll           = (0xff),
 } FfxKey;
 
@@ -199,6 +199,10 @@ typedef int (*FfxPanelInitFunc)(FfxScene scene, FfxNode node, void* state,
  *  Panel, passed as the state to the [[FfxPanelInitFunc]].
  */
 int ffx_pushPanel(FfxPanelInitFunc initFunc, size_t stateSize, void *initArg);
+
+// Push a panel that inserts a Rotate90Node instead of a normal groupNode
+// on devices that only have 4-buttons
+//int ffx_pushWidePanel(FfxPanelInitFunc initFunc, size_t stateSize, void *initArg);
 
 /**
  *  Pops the Active Panel from the Panel Stack, returning control

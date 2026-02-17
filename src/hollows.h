@@ -1,5 +1,5 @@
-#ifndef __FIREFLY_HOLLOWS_PRIVATE_H__
-#define __FIREFLY_HOLLOWS_PRIVATE_H__
+#ifndef __HOLLOWS_H__
+#define __HOLLOWS_H__
 
 #ifdef __cplusplus
 extern "C" {
@@ -55,4 +55,4 @@ void taskBleFunc(void* pvParameter);
 }
 #endif /* __cplusplus */
 
-#endif /* __FIREFLY_HOLLOWS_H__ */
+#endif /* __HOLLOWS_H__ */

@@ -196,9 +196,27 @@ FfxDeviceInfo ffx_deviceModelInfo(int modelNumber) {
 }
 
 FfxDeviceInfo ffx_deviceInfo() {
-    FfxDeviceInfo result = ffx_deviceModelInfo(modelNumber);
+
+    int _modelNumber = modelNumber;
+    int _serialNumber = serialNumber;
+
+    // If called without ffx_init, we still try loading the eFuse data
+    if (status == FfxDeviceStatusNotInitialized) {
+        uint32_t version = esp_efuse_read_reg(EFUSE_BLK3, 0);
+        _modelNumber = esp_efuse_read_reg(EFUSE_BLK3, 1);
+        _serialNumber = esp_efuse_read_reg(EFUSE_BLK3, 2);
+
+        // If the burned data is bad, reset back to -1
+        if (version != 0x00000001 || _modelNumber == 0 || _serialNumber == 0) {
+            _modelNumber = -1;
+            _serialNumber = -1;
+        }
+    }
+
+    FfxDeviceInfo result = ffx_deviceModelInfo(_modelNumber);
     result.status = status;
-    result.serialNumber = serialNumber;
+    result.serialNumber = _serialNumber;
+
     return result;
 }
 
@@ -235,12 +253,14 @@ FfxDeviceInfo ffx_deviceInit() {
     {
         int ret = nvs_flash_init_partition("attest");
         if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+            printf("Corrupt: Missing nvs.attest (serial=%ld, status=%d)\n", _serialNumber, ret);
             status = FfxDeviceStatusMissingNvs;
             return ffx_deviceInfo();
         }
 
         ret = nvs_open_from_partition("attest", "secure", NVS_READONLY, &nvs);
         if (ret) {
+            printf("Corrupt: Missing nvs.attest.secure (serial=%ld, status=%d)\n", _serialNumber, ret);
             status = FfxDeviceStatusMissingNvs;
             return ffx_deviceInfo();
         }
@@ -256,6 +276,7 @@ FfxDeviceInfo ffx_deviceInit() {
         if (ret || olen != sizeof(esp_ds_data_t)) {
             free(cipherdata);
             cipherdata = NULL;
+            printf("Corrupt: Missing nvs.attest.secure[cipherdata] (serial=%ld)\n", _serialNumber);
             status = FfxDeviceStatusMissingNvs;
             return ffx_deviceInfo();
         }
@@ -266,6 +287,7 @@ FfxDeviceInfo ffx_deviceInit() {
         size_t olen = 64;
         int ret = nvs_get_blob(nvs, "attest", attestProof, &olen);
         if (ret || olen != 64) {
+            printf("Corrupt: Missing nvs.attest.secure[attest] (serial=%ld)\n", _serialNumber);
             status = FfxDeviceStatusMissingNvs;
             return ffx_deviceInfo();
         }
@@ -276,6 +298,7 @@ FfxDeviceInfo ffx_deviceInit() {
         size_t olen = 384;
         int ret = nvs_get_blob(nvs, "pubkey-n", pubkeyN, &olen);
         if (ret || olen != 384) {
+            printf("Corrupt: Missing nvs.attest.secure[pubkey-n] (serial=%ld)\n", _serialNumber);
             status = FfxDeviceStatusMissingNvs;
             return ffx_deviceInfo();
         }

@@ -1,14 +1,4 @@
 
-#include <stdlib.h>
-#include <string.h>
-
-#include <driver/gpio.h>
-#include <hal/gpio_ll.h>
-#include "esp_random.h"
-
-#include "soc/gpio_reg.h"
-#include "soc/soc.h"
-
 #include "firefly-display.h"
 #include "firefly-scene.h"
 
@@ -18,7 +8,10 @@
 #include "pixels.h"
 #include "utils.h"
 
+#include "firefly-hollows-private.h"
 
+
+/*
 ///////////////////////////////
 // Keypad
 //
@@ -204,7 +197,7 @@ static FfxKeys keypad_didChange(KeypadContext *context, FfxKeys keys) {
 static FfxKeys keypad_read(KeypadContext *context) {
     return context->latch;
 }
-
+*/
 
 ///////////////////////////////
 // Pixels
@@ -302,8 +295,7 @@ void taskIoFunc(void* pvParameter) {
     scene = ffx_scene_init(allocSpace, freeSpace, NULL, NULL, NULL);
 
 
-    KeypadContext keypad = { 0 };
-    keypad_init(&keypad, &device);
+    FfxKeypadContext keypad = ffx_keypad_init(&device);
 
     color_ffxt colorRamp1[] = {
         ffx_color_hsva(275, 0x3f, 0x00, 0x0c),
@@ -429,7 +421,7 @@ void taskIoFunc(void* pvParameter) {
 
     while (1) {
         // Sample the keypad
-        keypad_sample(&keypad);
+        ffx_keypad_sample(keypad);
 
         // Render a screen fragment; if the last fragment is
         // complete, the frame is complete
@@ -443,10 +435,8 @@ void taskIoFunc(void* pvParameter) {
             pixels_tick(pixels);
 
             // Latch the keypad values de-bouncing with the inter-frame samples
-            keypad_latch(&keypad);
-
-            FfxKeys down = keypad_read(&keypad);
-            FfxKeys changed = keypad_didChange(&keypad, FfxKeyAll);
+            FfxKeys down = ffx_keypad_latch(keypad);
+            FfxKeys changed = ffx_keypad_getChanged(keypad);
 
             // Check for holding the reset sequence to start a timer
             if (changed) { resetStart = (down == FfxKeyReset) ? ticks(): 0; }

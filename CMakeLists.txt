@@ -4,6 +4,7 @@ idf_component_register(
   SRCS
     "src/device-info.c"
     "src/hollows.c"
+    "src/keypad.c"
     "src/panel.c"
     "src/panel-info.c"
     "src/pixels.c"
