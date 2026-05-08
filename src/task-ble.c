@@ -395,7 +395,7 @@ static FfxCborBuilder prepareReply() {
 static void sendMessage(const FfxCborBuilder *builder) {
     size_t cborLength = ffx_cbor_getBuildLength(builder);
 
-    FFX_LOG(">>> (id=%ld => replyId=%ld) ", msg.id, msg.replyId);
+    FFX_LOG(">>> (id=%u => replyId=%u) ", msg.id, msg.replyId);
     FfxCborCursor cursor = ffx_cbor_walk(builder->data, cborLength);
     ffx_cbor_dump(&cursor);
 
@@ -442,7 +442,7 @@ static void processMessage() {
     msg.replyId = checkMessage(msg.payload);
 
     // Dump the CBOR data to the console
-    FFX_LOG("<<< (id=%ld => replyId=%ld) ", msg.id, msg.replyId);
+    FFX_LOG("<<< (id=%u => replyId=%u) ", msg.id, msg.replyId);
     ffx_cbor_dump(&msg.payload);
 
     if (msg.replyId) {
@@ -892,13 +892,13 @@ static int gapEvent(struct ble_gap_event *event, void *_context) {
                 struct ble_sm_io passkey = { 0 };
                 passkey.action = event->passkey.params.action;
                 passkey.passkey = 123456;
-                FFX_LOG("passkey action; display: passkey=%06ld\n",
+                FFX_LOG("passkey action; display: passkey=%06u\n",
                   passkey.passkey);
                 int rc = ble_sm_inject_io(event->passkey.conn_handle, &passkey);
                 if (rc) { FFX_LOG("ble_sm_inject_io result: %d\n", rc); }
 
             } else if (event->passkey.params.action == BLE_SM_IOACT_NUMCMP) {
-                FFX_LOG("passkey action; numcmp: passkey=%06ld\n",
+                FFX_LOG("passkey action; numcmp: passkey=%06u\n",
                   event->passkey.params.numcmp);
 
                 struct ble_sm_io passkey = { 0 };
@@ -968,7 +968,7 @@ static int gapEvent(struct ble_gap_event *event, void *_context) {
     return 0;
 }
 
-static void runTask() {
+static void runTask(void *) {
     FFX_LOG("BLE Host Task Started");
 
     // Runs until nimble_port_stop() is called
@@ -1017,7 +1017,7 @@ bool ffx_sendErrorReply(int id, uint32_t code, const char *message) {
     xSemaphoreTake(msg.lock, portMAX_DELAY);
 
     if (id != msg.id || msg.state != MessageStateProcessing) {
-        FFX_LOG("Wrong error reply: id=%d msg.id=%ld replyId=%ld\n", id,
+        FFX_LOG("Wrong error reply: id=%d msg.id=%u replyId=%u\n", id,
           msg.id, msg.replyId);
         xSemaphoreGive(msg.lock);
         return false;
@@ -1050,7 +1050,7 @@ bool ffx_sendReply(int id, const FfxCborBuilder *result) {
 
     if (id == 0 || id != msg.id || msg.state != MessageStateProcessing ||
       ffx_cbor_getBuildLength(result) > MAX_MESSAGE_SIZE) {
-        FFX_LOG("Wrong reply: id=%d msg.id=%ld replyId=%ld\n", id, msg.id,
+        FFX_LOG("Wrong reply: id=%d msg.id=%u replyId=%u\n", id, msg.id,
           msg.replyId);
 
         xSemaphoreGive(msg.lock);
