@@ -24,6 +24,8 @@ idf_component_register(
   PRIV_REQUIRES
     "bt"
     "efuse"
+    "esp_driver_rmt"
+    "esp_security"
     "firefly-display"
     "nvs_flash"
 )
