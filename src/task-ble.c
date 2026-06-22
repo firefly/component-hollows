@@ -760,13 +760,24 @@ static void advertise() {
     }
 }
 
+// Forward-declared from NimBLE's private header (ble_hs_priv.h). Required
+// because ESP-IDF v5.4+'s NimBLE asserts that the host lock is held during
+// ble_hs_id_copy_addr; older NimBLE versions allowed it from the host task
+// without an explicit lock.
+extern void ble_hs_lock(void);
+extern void ble_hs_unlock(void);
+
 static void onSync(void) {
     int rc;
 
     rc = ble_hs_id_infer_auto(0, &conn.own_addr_type);
     assert(rc == 0);
 
+    // ble_hs_id_copy_addr → ble_hs_id_addr asserts ble_hs_locked_by_cur_task()
+    // when CONFIG_BT_NIMBLE_DEBUG=y under ESP-IDF v5.4+. Wrap explicitly.
+    ble_hs_lock();
     rc = ble_hs_id_copy_addr(conn.own_addr_type, conn.address, NULL);
+    ble_hs_unlock();
 
     print_addr("sync addr=", conn.address);
 
